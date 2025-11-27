@@ -1180,7 +1180,16 @@ onUnmounted(() => {
                   <td class="px-4 py-3 font-mono text-slate-600">{{ index + 1 }}</td>
                   <td class="px-4 py-3">
                     <div class="flex items-center gap-2">
+                      <!-- Player avatar -->
+                      <img
+                        v-if="player.player_avatar"
+                        :src="player.player_avatar"
+                        :alt="player.player_name"
+                        class="w-8 h-8 rounded-full border border-slate-700 group-hover:border-emerald-500/50 transition-colors object-cover"
+                      />
+                      <!-- Fallback letter circle -->
                       <div
+                        v-else
                         class="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-300 border border-slate-700 group-hover:border-emerald-500/50 group-hover:text-emerald-400 transition-colors"
                       >
                         {{ (player.player_name || "P").charAt(0).toUpperCase() }}
