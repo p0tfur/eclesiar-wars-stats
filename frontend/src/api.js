@@ -18,10 +18,11 @@ export async function getBattles() {
 /**
  * Fetch a battle from Eclesiar API and save to database
  * @param {number} battleId - Battle ID to fetch
+ * @param {string} [apiKey] - Optional user API key
  * @returns {Promise<Object>} - Fetched battle data
  */
-export async function fetchBattle(battleId) {
-  const response = await api.post("/battles/fetch", { battleId });
+export async function fetchBattle(battleId, apiKey) {
+  const response = await api.post("/battles/fetch", { battleId, apiKey });
   return response.data;
 }
 
@@ -29,10 +30,11 @@ export async function fetchBattle(battleId) {
  * Fetch a range of battles from Eclesiar API and save to database
  * @param {number} fromId - Start battle ID
  * @param {number} toId - End battle ID
+ * @param {string} [apiKey] - Optional user API key
  * @returns {Promise<Object>} - Response
  */
-export async function fetchBattleRange(fromId, toId) {
-  const response = await api.post("/battles/fetch-range", { fromId, toId });
+export async function fetchBattleRange(fromId, toId, apiKey) {
+  const response = await api.post("/battles/fetch-range", { fromId, toId, apiKey });
   return response.data;
 }
 
