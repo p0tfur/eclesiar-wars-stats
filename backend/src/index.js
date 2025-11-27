@@ -22,8 +22,24 @@ app.use(express.json());
 app.use("/api/battles", battlesRouter);
 
 // Health check endpoint
-app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+app.get("/api/health", async (req, res) => {
+  const dbStatus = await testConnection();
+  res.json({
+    status: dbStatus ? "ok" : "degraded",
+    database: dbStatus ? "connected" : "disconnected",
+    timestamp: new Date().toISOString(),
+    env: {
+      nodeEnv: process.env.NODE_ENV || "(not set)",
+      port: process.env.PORT || "(not set)",
+      dbHost: process.env.DB_HOST ? "set" : "missing",
+      dbPort: process.env.DB_PORT ? "set" : "missing",
+      dbUser: process.env.DB_USER ? "set" : "missing",
+      dbName: process.env.DB_NAME ? "set" : "missing",
+      dbPassword: process.env.DB_PASSWORD ? "set" : "missing",
+      eclesiarApiUrl: process.env.ECLESIAR_API_URL ? "set" : "missing",
+      eclesiarApiKey: process.env.ECLESIAR_API_KEY ? "set" : "missing",
+    },
+  });
 });
 
 // Serve static frontend in production (built files in backend/public)

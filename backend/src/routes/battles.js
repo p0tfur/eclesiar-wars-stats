@@ -45,7 +45,9 @@ router.post("/fetch", async (req, res) => {
 
     res.json({ success: true, data: battle, message: "Battle fetched and saved successfully" });
   } catch (error) {
+    // Log full error stack for debugging
     console.log("Error fetching battle:", error.message);
+    console.log("Stack:", error.stack);
     res.status(500).json({ success: false, error: error.message });
   }
 });
