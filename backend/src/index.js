@@ -1,10 +1,15 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
 import { testConnection } from "./config/database.js";
 import battlesRouter from "./routes/battles.js";
 
 dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -19,6 +24,19 @@ app.use("/api/battles", battlesRouter);
 // Health check endpoint
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+// Serve static frontend in production (built files in backend/public)
+const publicPath = path.join(__dirname, "..", "public");
+app.use(express.static(publicPath));
+
+// SPA fallback – serve index.html for any non-API route
+app.get("*", (req, res, next) => {
+  // Skip API routes
+  if (req.path.startsWith("/api")) {
+    return next();
+  }
+  res.sendFile(path.join(publicPath, "index.html"));
 });
 
 // Start server
