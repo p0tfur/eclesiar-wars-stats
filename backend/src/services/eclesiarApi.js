@@ -11,13 +11,23 @@ const REQUEST_DELAY_MS = 50; // Delay between requests (ms)
 const MAX_RETRIES = 5;
 const RETRY_DELAY_MS = 1000; // Initial retry delay (doubles each retry)
 
-// Create axios instance with auth header
+// Create axios instance (auth header added per-request to support user-provided keys)
 const apiClient = axios.create({
   baseURL: API_URL,
-  headers: {
-    Authorization: `Bearer ${API_KEY}`,
-  },
 });
+
+/**
+ * Get authorization headers using provided key or fallback to env key
+ * @param {string} [apiKey] - Optional user-provided API key
+ * @returns {Object} - Headers object with Authorization
+ */
+function getAuthHeaders(apiKey) {
+  const key = apiKey || API_KEY;
+  if (!key) {
+    throw new Error("No API key provided. Please enter your Eclesiar API key.");
+  }
+  return { Authorization: `Bearer ${key}` };
+}
 
 /**
  * Sleep for specified milliseconds
@@ -64,15 +74,17 @@ async function requestWithRetry(requestFn, description = "API request") {
 /**
  * Fetch wars list from Eclesiar API
  * @param {Object} params - Query parameters
+ * @param {string} [apiKey] - Optional user-provided API key
  * @returns {Promise<Array>} - List of wars
  */
-export async function fetchWars(params = {}) {
+export async function fetchWars(params = {}, apiKey) {
   try {
     // Exclude event wars by default (only normal wars)
     const queryParams = { event_wars: 0, ...params };
+    const headers = getAuthHeaders(apiKey);
 
     const response = await requestWithRetry(
-      () => apiClient.get("/wars", { params: queryParams }),
+      () => apiClient.get("/wars", { params: queryParams, headers }),
       `Fetch war ${params.war_id || "list"}`
     );
 
@@ -89,12 +101,14 @@ export async function fetchWars(params = {}) {
 /**
  * Fetch rounds for a specific war
  * @param {number} warId - War ID
+ * @param {string} [apiKey] - Optional user-provided API key
  * @returns {Promise<Array>} - List of rounds
  */
-export async function fetchWarRounds(warId) {
+export async function fetchWarRounds(warId, apiKey) {
   try {
+    const headers = getAuthHeaders(apiKey);
     const response = await requestWithRetry(
-      () => apiClient.get("/war/rounds", { params: { war_id: warId } }),
+      () => apiClient.get("/war/rounds", { params: { war_id: warId }, headers }),
       `Fetch rounds for war ${warId}`
     );
     if (response.data.code === 200) {
@@ -110,18 +124,20 @@ export async function fetchWarRounds(warId) {
 /**
  * Fetch hits for a specific round (handles pagination)
  * @param {number} roundId - Round ID
+ * @param {string} [apiKey] - Optional user-provided API key
  * @returns {Promise<Array>} - List of all hits
  */
-export async function fetchRoundHits(roundId) {
+export async function fetchRoundHits(roundId, apiKey) {
   try {
     let allHits = [];
     let page = 1;
     let hasMore = true;
+    const headers = getAuthHeaders(apiKey);
 
     // Paginate through all hits
     while (hasMore) {
       const response = await requestWithRetry(
-        () => apiClient.get("/war/round/hits", { params: { war_round_id: roundId, page } }),
+        () => apiClient.get("/war/round/hits", { params: { war_round_id: roundId, page }, headers }),
         `Fetch hits for round ${roundId} page ${page}`
       );
 
@@ -150,12 +166,14 @@ export async function fetchRoundHits(roundId) {
 /**
  * Fetch account info by ID
  * @param {number} accountId - Account ID
+ * @param {string} [apiKey] - Optional user-provided API key
  * @returns {Promise<Object>} - Account data
  */
-export async function fetchAccount(accountId) {
+export async function fetchAccount(accountId, apiKey) {
   try {
+    const headers = getAuthHeaders(apiKey);
     const response = await requestWithRetry(
-      () => apiClient.get("/account", { params: { account_id: accountId } }),
+      () => apiClient.get("/account", { params: { account_id: accountId }, headers }),
       `Fetch account ${accountId}`
     );
     if (response.data.code === 200) {
