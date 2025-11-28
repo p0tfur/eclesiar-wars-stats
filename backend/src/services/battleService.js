@@ -1,5 +1,6 @@
 import pool from "../config/database.js";
 import { fetchWars, fetchWarRounds, fetchRoundHits, fetchAccount } from "./eclesiarApi.js";
+import { getItemName } from "../config/itemMapping.js";
 
 /**
  * Get all battles from database
@@ -56,13 +57,22 @@ export async function fetchAndSaveBattle(battleId, apiKey) {
     throw new Error("Battle defenders data is missing");
   }
 
+  // Fetch rounds first to get end_date from round 9 (last round)
+  const rounds = await fetchWarRounds(battleId, apiKey);
+  console.log(`Fetched ${rounds.length} rounds for battle ${battleId}`);
+
+  // Get end_date from round 9 (last round) - rounds are sorted by id ascending
+  // Round 9 is the last round of the battle
+  const lastRound = rounds.length > 0 ? rounds[rounds.length - 1] : null;
+  const battleEndDate = lastRound?.end_date || null;
+
   // Save battle to database
   await pool.query(
     `
     INSERT INTO battles (id, attacker_id, attacker_name, attacker_avatar, 
                          defender_id, defender_name, defender_avatar,
-                         region_id, region_name, attackers_score, defenders_score, is_revolution)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         region_id, region_name, attackers_score, defenders_score, is_revolution, end_date)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON DUPLICATE KEY UPDATE
       attacker_name = VALUES(attacker_name),
       attacker_avatar = VALUES(attacker_avatar),
@@ -70,6 +80,7 @@ export async function fetchAndSaveBattle(battleId, apiKey) {
       defender_avatar = VALUES(defender_avatar),
       attackers_score = VALUES(attackers_score),
       defenders_score = VALUES(defenders_score),
+      end_date = VALUES(end_date),
       fetched_at = CURRENT_TIMESTAMP
   `,
     [
@@ -85,13 +96,11 @@ export async function fetchAndSaveBattle(battleId, apiKey) {
       war.attackers_score,
       war.defenders_score,
       war.flags?.is_revolution || 0,
+      battleEndDate,
     ]
   );
 
-  // Fetch and save rounds
-  const rounds = await fetchWarRounds(battleId, apiKey);
-  console.log(`Fetched ${rounds.length} rounds for battle ${battleId}`);
-
+  // Save rounds to database
   for (const round of rounds) {
     await pool.query(
       `
@@ -263,6 +272,35 @@ export async function getWarSummary(battleIds) {
     [battleIds]
   );
 
+  // Get damage breakdown per weapon for each fighter
+  const [weaponBreakdown] = await pool.query(
+    `
+    SELECT 
+      h.fighter_id,
+      h.item_id,
+      SUM(h.damage) as damage,
+      COUNT(*) as hits
+    FROM hits h
+    JOIN rounds r ON h.round_id = r.id
+    WHERE r.battle_id IN (?)
+    GROUP BY h.fighter_id, h.item_id
+  `,
+    [battleIds]
+  );
+
+  // Build weapon breakdown lookup map: fighter_id -> { item_id: { damage, hits, item_name } }
+  const weaponLookup = new Map();
+  for (const row of weaponBreakdown) {
+    if (!weaponLookup.has(row.fighter_id)) {
+      weaponLookup.set(row.fighter_id, {});
+    }
+    const itemName = getItemName(row.item_id);
+    weaponLookup.get(row.fighter_id)[itemName] = {
+      damage: Number(row.damage),
+      hits: Number(row.hits),
+    };
+  }
+
   // Determine side based on the first battle (lowest battle_id, then earliest hit) where the fighter appears
   const [firstSides] = await pool.query(
     `
@@ -294,6 +332,7 @@ export async function getWarSummary(battleIds) {
   const summaryRows = playerTotals.map((player) => ({
     ...player,
     side: sideLookup.get(player.fighter_id) || "UNKNOWN",
+    weapons: weaponLookup.get(player.fighter_id) || {},
   }));
 
   console.log("Summary rows returned:", summaryRows.length);

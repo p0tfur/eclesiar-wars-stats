@@ -16,6 +16,7 @@ CREATE TABLE battles (
     attackers_score INT DEFAULT 0,
     defenders_score INT DEFAULT 0,
     is_revolution TINYINT(1) DEFAULT 0,
+    end_date DATETIME,                          -- Data zakończenia rundy 9 (ostatniej rundy) = data rozpoczęcia bitwy
     fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
