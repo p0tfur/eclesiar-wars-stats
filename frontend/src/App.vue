@@ -185,6 +185,10 @@ const displayedBattles = computed(() => {
   return battles.value.filter((battle) => allowed.has(battle.id));
 });
 
+const sortedDisplayedBattles = computed(() => {
+  return [...displayedBattles.value].sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0));
+});
+
 const filterSelectedBattleIds = computed(() =>
   filteredBattleIds.value.filter((id) => !excludedFilterBattleIds.value.includes(id))
 );
@@ -1169,7 +1173,7 @@ onUnmounted(() => {
               </thead>
               <tbody class="divide-y divide-slate-800/50">
                 <tr
-                  v-for="battle in displayedBattles"
+                  v-for="battle in sortedDisplayedBattles"
                   :key="battle.id"
                   class="hover:bg-slate-800/30 transition-colors group"
                 >

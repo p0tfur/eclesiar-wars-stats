@@ -66,6 +66,12 @@ export async function fetchAndSaveBattle(battleId, apiKey) {
   const lastRound = rounds.length > 0 ? rounds[rounds.length - 1] : null;
   const battleEndDate = lastRound?.end_date || null;
 
+  // Do not persist Stadium battles
+  if (war.region?.name === "Stadium") {
+    console.log(`Skipping save for battle ${battleId} because region_name is Stadium`);
+    return war;
+  }
+
   // Save battle to database
   await pool.query(
     `
