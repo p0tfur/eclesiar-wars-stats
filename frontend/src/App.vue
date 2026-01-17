@@ -240,16 +240,17 @@ function toggleSummarySort(key) {
   }
 }
 
-// Check if battle is incomplete (less than 9 rounds or recent end_date)
+// Check if battle is incomplete (neither side has won 5 rounds yet)
 function isBattleIncomplete(battle) {
-  // If rounds_count is less than 9, it might be incomplete
-  if (battle.rounds_count < 9) {
+  // Battle is complete when one side reaches 5 wins
+  const attackerWins = battle.attackers_score || 0;
+  const defenderWins = battle.defenders_score || 0;
+  
+  // If neither side has 5 wins, battle is still in progress
+  if (attackerWins < 5 && defenderWins < 5) {
     return true;
   }
-  // If no end_date, it's incomplete
-  if (!battle.end_date) {
-    return true;
-  }
+  
   return false;
 }
 
@@ -1234,14 +1235,13 @@ onUnmounted(() => {
             <table class="w-full text-sm">
               <thead class="bg-slate-950/50 text-slate-400 font-medium uppercase text-xs tracking-wider">
                 <tr>
-                  <th class="px-0 py-3 text-left w-8">Select</th>
-                  <th class="px-4 py-3 text-left">ID</th>
-                  <th class="px-4 py-3 text-left">Attacker</th>
-                  <th class="px-4 py-3 text-left">Defender</th>
-                  <th class="px-4 py-3 text-left">Region</th>
-                  <th class="px-4 py-3 text-left">End Date</th>
-                  <th class="px-4 py-3 text-left">Rounds</th>
-                  <th class="px-2 py-3 text-center w-16">Actions</th>
+                  <th class="px-1 py-3 text-center w-8" title="Select">☑</th>
+                  <th class="px-2 py-3 text-left">ID</th>
+                  <th class="px-2 py-3 text-left">Attacker</th>
+                  <th class="px-2 py-3 text-left">Defender</th>
+                  <th class="px-2 py-3 text-left">Region</th>
+                  <th class="px-2 py-3 text-left">Date</th>
+                  <th class="px-2 py-3 text-center">Score</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-800/50">
@@ -1251,7 +1251,7 @@ onUnmounted(() => {
                   class="hover:bg-slate-800/30 transition-colors group"
                   :class="{ 'bg-amber-500/5': isBattleIncomplete(battle) }"
                 >
-                  <td class="px-0 py-3 w-8 text-center">
+                  <td class="px-0 py-2 w-6 text-center">
                     <input
                       type="checkbox"
                       :checked="isBattleSelected(battle.id)"
@@ -1259,67 +1259,70 @@ onUnmounted(() => {
                       class="w-4 h-4 rounded bg-slate-800 border-slate-600 text-emerald-500 focus:ring-emerald-500/50 focus:ring-offset-0"
                     />
                   </td>
-                  <td class="px-4 py-3 font-mono text-slate-500">{{ battle.id }}</td>
-                  <td class="px-4 py-3">
-                    <div class="flex items-center gap-2">
+                  <td class="px-2 py-2">
+                    <div class="flex items-center gap-1.5">
+                      <span class="font-mono text-slate-500">{{ battle.id }}</span>
+                      <!-- Refresh button for incomplete battles -->
+                      <button
+                        v-if="isBattleIncomplete(battle)"
+                        @click.stop="refreshBattle(battle.id)"
+                        :disabled="refreshingBattleId !== null"
+                        class="p-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 hover:text-amber-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        :title="`Refresh (score: ${battle.attackers_score}:${battle.defenders_score})`"
+                      >
+                        <svg 
+                          v-if="refreshingBattleId === battle.id" 
+                          class="w-3 h-3 animate-spin" 
+                          fill="none" 
+                          viewBox="0 0 24 24"
+                        >
+                          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                        </svg>
+                      </button>
+                    </div>
+                  </td>
+                  <td class="px-2 py-2">
+                    <div class="flex items-center gap-1.5">
                       <img
                         v-if="battle.attacker_avatar"
                         :src="battle.attacker_avatar"
-                        class="w-6 h-6 rounded border border-slate-700"
+                        class="w-5 h-5 rounded border border-slate-700"
                         :alt="battle.attacker_name"
                       />
-                      <span class="text-slate-200 group-hover:text-white transition-colors">{{
+                      <span class="text-slate-200 group-hover:text-white transition-colors text-xs">{{
                         battle.attacker_name
                       }}</span>
                     </div>
                   </td>
-                  <td class="px-4 py-3">
-                    <div class="flex items-center gap-2">
+                  <td class="px-2 py-2">
+                    <div class="flex items-center gap-1.5">
                       <img
                         v-if="battle.defender_avatar"
                         :src="battle.defender_avatar"
-                        class="w-6 h-6 rounded border border-slate-700"
+                        class="w-5 h-5 rounded border border-slate-700"
                         :alt="battle.defender_name"
                       />
-                      <span class="text-slate-200 group-hover:text-white transition-colors">{{
+                      <span class="text-slate-200 group-hover:text-white transition-colors text-xs">{{
                         battle.defender_name
                       }}</span>
                     </div>
                   </td>
-                  <td class="px-4 py-3">
-                    <div class="text-slate-300">{{ battle.region_name || "Unknown" }}</div>
-                    <div class="text-xs text-slate-600 font-mono">ID: {{ battle.region_id || "-" }}</div>
+                  <td class="px-2 py-2">
+                    <div class="text-slate-300 text-xs">{{ battle.region_name || "Unknown" }}</div>
                   </td>
-                  <td class="px-4 py-3 text-slate-400 text-xs font-mono">
+                  <td class="px-2 py-2 text-slate-400 text-xs font-mono">
                     {{ battle.end_date ? new Date(battle.end_date).toLocaleDateString("pl-PL") : "-" }}
                   </td>
-                  <td class="px-4 py-3 font-mono" :class="battle.rounds_count < 9 ? 'text-amber-400' : 'text-slate-400'">
-                    {{ battle.rounds_count }}
-                    <span v-if="battle.rounds_count < 9" class="text-xs text-amber-500">/9</span>
-                  </td>
-                  <td class="px-2 py-3 text-center">
-                    <button
-                      v-if="isBattleIncomplete(battle)"
-                      @click="refreshBattle(battle.id)"
-                      :disabled="refreshingBattleId !== null"
-                      class="p-1.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 hover:text-amber-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      :title="'Refresh incomplete battle (rounds: ' + battle.rounds_count + '/9)'"
+                  <td class="px-2 py-2 text-center font-mono text-xs">
+                    <span 
+                      :class="isBattleIncomplete(battle) ? 'text-amber-400' : 'text-slate-400'"
                     >
-                      <svg 
-                        v-if="refreshingBattleId === battle.id" 
-                        class="w-4 h-4 animate-spin" 
-                        fill="none" 
-                        stroke="currentColor" 
-                        viewBox="0 0 24 24"
-                      >
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                      </svg>
-                    </button>
-                    <span v-else class="text-slate-600 text-xs">—</span>
+                      {{ battle.attackers_score }}:{{ battle.defenders_score }}
+                    </span>
                   </td>
                 </tr>
               </tbody>
