@@ -43,6 +43,13 @@ const dateTo = ref("");
 // Weapon order for display (most powerful first)
 const WEAPON_ORDER = ["WQ5", "WQ4", "WQ3", "WQ2", "WQ1", "AQ5", "AQ4", "AQ3", "AQ2", "AQ1", "Hand"];
 
+// Summary table sorting state
+const summarySortKey = ref("total_damage");
+const summarySortAsc = ref(false);
+
+// Refresh state for individual battles
+const refreshingBattleId = ref(null);
+
 const hasWeaponBreakdown = (player) => !!player?.weapons && Object.keys(player.weapons).length > 0;
 
 function isWeaponExpanded(fighterId) {
@@ -200,6 +207,71 @@ const combinedBattleIds = computed(() => {
 });
 
 const hasSelectedBattles = computed(() => combinedBattleIds.value.length > 0);
+
+// Sorted summary based on current sort key
+const sortedSummary = computed(() => {
+  const sorted = [...summary.value];
+  sorted.sort((a, b) => {
+    let aVal = a[summarySortKey.value];
+    let bVal = b[summarySortKey.value];
+    
+    // Handle string comparison
+    if (typeof aVal === "string" && typeof bVal === "string") {
+      return summarySortAsc.value 
+        ? aVal.localeCompare(bVal) 
+        : bVal.localeCompare(aVal);
+    }
+    
+    // Handle numeric comparison
+    aVal = Number(aVal) || 0;
+    bVal = Number(bVal) || 0;
+    return summarySortAsc.value ? aVal - bVal : bVal - aVal;
+  });
+  return sorted;
+});
+
+// Function to toggle sort on a column
+function toggleSummarySort(key) {
+  if (summarySortKey.value === key) {
+    summarySortAsc.value = !summarySortAsc.value;
+  } else {
+    summarySortKey.value = key;
+    summarySortAsc.value = key === "player_name"; // Default asc for text, desc for numbers
+  }
+}
+
+// Check if battle is incomplete (less than 9 rounds or recent end_date)
+function isBattleIncomplete(battle) {
+  // If rounds_count is less than 9, it might be incomplete
+  if (battle.rounds_count < 9) {
+    return true;
+  }
+  // If no end_date, it's incomplete
+  if (!battle.end_date) {
+    return true;
+  }
+  return false;
+}
+
+// Refresh a single battle
+async function refreshBattle(battleId) {
+  if (refreshingBattleId.value) return;
+  
+  refreshingBattleId.value = battleId;
+  error.value = "";
+  
+  try {
+    console.log(`Refreshing battle ${battleId}...`);
+    await fetchBattle(battleId, userApiKey.value || undefined);
+    // Reload battles list to get updated data
+    await loadBattles();
+  } catch (err) {
+    error.value = "Failed to refresh battle: " + err.message;
+    console.log("Error refreshing battle:", err);
+  } finally {
+    refreshingBattleId.value = null;
+  }
+}
 
 watch(filteredBattleIds, (newIds) => {
   excludedFilterBattleIds.value = excludedFilterBattleIds.value.filter((id) => newIds.includes(id));
@@ -1119,7 +1191,7 @@ onUnmounted(() => {
               <button
                 @click="generateSummary"
                 :disabled="!hasSelectedBattles || loadingSummary"
-                class="px-4 py-1.5 text-sm bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500 transition-colors shadow-lg shadow-emerald-500/20"
+                class="px-4 py-1.5 text-sm font-bold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500 bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-lg shadow-emerald-500/20"
               >
                 <span v-if="loadingSummary">Loading...</span>
                 <span v-else>Generate Summary ({{ combinedBattleIds.length }})</span>
@@ -1169,6 +1241,7 @@ onUnmounted(() => {
                   <th class="px-4 py-3 text-left">Region</th>
                   <th class="px-4 py-3 text-left">End Date</th>
                   <th class="px-4 py-3 text-left">Rounds</th>
+                  <th class="px-2 py-3 text-center w-16">Actions</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-800/50">
@@ -1176,6 +1249,7 @@ onUnmounted(() => {
                   v-for="battle in sortedDisplayedBattles"
                   :key="battle.id"
                   class="hover:bg-slate-800/30 transition-colors group"
+                  :class="{ 'bg-amber-500/5': isBattleIncomplete(battle) }"
                 >
                   <td class="px-0 py-3 w-8 text-center">
                     <input
@@ -1219,7 +1293,34 @@ onUnmounted(() => {
                   <td class="px-4 py-3 text-slate-400 text-xs font-mono">
                     {{ battle.end_date ? new Date(battle.end_date).toLocaleDateString("pl-PL") : "-" }}
                   </td>
-                  <td class="px-4 py-3 font-mono text-slate-400">{{ battle.rounds_count }}</td>
+                  <td class="px-4 py-3 font-mono" :class="battle.rounds_count < 9 ? 'text-amber-400' : 'text-slate-400'">
+                    {{ battle.rounds_count }}
+                    <span v-if="battle.rounds_count < 9" class="text-xs text-amber-500">/9</span>
+                  </td>
+                  <td class="px-2 py-3 text-center">
+                    <button
+                      v-if="isBattleIncomplete(battle)"
+                      @click="refreshBattle(battle.id)"
+                      :disabled="refreshingBattleId !== null"
+                      class="p-1.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 hover:text-amber-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      :title="'Refresh incomplete battle (rounds: ' + battle.rounds_count + '/9)'"
+                    >
+                      <svg 
+                        v-if="refreshingBattleId === battle.id" 
+                        class="w-4 h-4 animate-spin" 
+                        fill="none" 
+                        stroke="currentColor" 
+                        viewBox="0 0 24 24"
+                      >
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                      </svg>
+                    </button>
+                    <span v-else class="text-slate-600 text-xs">—</span>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -1289,16 +1390,56 @@ onUnmounted(() => {
               <thead class="sticky top-0 bg-slate-900 text-slate-400 font-medium uppercase text-xs tracking-wider z-10">
                 <tr>
                   <th class="px-4 py-3 text-left">#</th>
-                  <th class="px-4 py-3 text-left">Player</th>
-                  <th class="px-4 py-3 text-left">Side</th>
-                  <th class="px-4 py-3 text-right whitespace-nowrap">Total Damage</th>
-                  <th class="px-4 py-3 text-right whitespace-nowrap">Hits</th>
+                  <th 
+                    class="px-4 py-3 text-left cursor-pointer hover:text-emerald-400 transition-colors select-none"
+                    @click="toggleSummarySort('player_name')"
+                  >
+                    <div class="flex items-center gap-1">
+                      Player
+                      <svg v-if="summarySortKey === 'player_name'" class="w-3 h-3 transition-transform" :class="{ 'rotate-180': !summarySortAsc }" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                      </svg>
+                    </div>
+                  </th>
+                  <th 
+                    class="px-4 py-3 text-left cursor-pointer hover:text-emerald-400 transition-colors select-none"
+                    @click="toggleSummarySort('side')"
+                  >
+                    <div class="flex items-center gap-1">
+                      Side
+                      <svg v-if="summarySortKey === 'side'" class="w-3 h-3 transition-transform" :class="{ 'rotate-180': !summarySortAsc }" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                      </svg>
+                    </div>
+                  </th>
+                  <th 
+                    class="px-4 py-3 text-right whitespace-nowrap cursor-pointer hover:text-emerald-400 transition-colors select-none"
+                    @click="toggleSummarySort('total_damage')"
+                  >
+                    <div class="flex items-center justify-end gap-1">
+                      Total Damage
+                      <svg v-if="summarySortKey === 'total_damage'" class="w-3 h-3 transition-transform" :class="{ 'rotate-180': summarySortAsc }" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                      </svg>
+                    </div>
+                  </th>
+                  <th 
+                    class="px-4 py-3 text-right whitespace-nowrap cursor-pointer hover:text-emerald-400 transition-colors select-none"
+                    @click="toggleSummarySort('hit_count')"
+                  >
+                    <div class="flex items-center justify-end gap-1">
+                      Hits
+                      <svg v-if="summarySortKey === 'hit_count'" class="w-3 h-3 transition-transform" :class="{ 'rotate-180': summarySortAsc }" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                      </svg>
+                    </div>
+                  </th>
                   <th class="px-4 py-3 text-left">Weapon Breakdown</th>
                 </tr>
               </thead>
 
               <tbody class="divide-y divide-slate-800/50">
-                <template v-for="(player, index) in summary" :key="`${player.fighter_id}-${player.side}`">
+                <template v-for="(player, index) in sortedSummary" :key="`${player.fighter_id}-${player.side}`">
                   <tr class="hover:bg-slate-800/30 transition-colors group">
                     <td class="px-4 py-3 font-mono text-slate-600">{{ index + 1 }}</td>
                     <td class="px-4 py-3">

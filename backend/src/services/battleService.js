@@ -230,8 +230,12 @@ function normalizeHitSide(rawSide) {
   return null;
 }
 
+// Batch size for processing battles in chunks to prevent memory issues
+const BATCH_SIZE = 50;
+
 /**
- * Get war summary for selected battles
+ * Get war summary for selected battles using batching
+ * Processes battles in batches to prevent server overload while allowing unlimited selection
  * @param {Array<number>} battleIds - List of battle IDs
  * @returns {Promise<Array>} - Summary with player damage totals
  */
@@ -240,106 +244,98 @@ export async function getWarSummary(battleIds) {
     return [];
   }
 
-  console.log("getWarSummary called with battleIds:", battleIds.slice(0, 10), "... (total:", battleIds.length, ")");
+  console.log(`getWarSummary called with ${battleIds.length} battles (processing in batches of ${BATCH_SIZE})`);
 
-  // First check if we have any hits at all
-  const [hitsCount] = await pool.query("SELECT COUNT(*) as count FROM hits");
-  console.log("Total hits in database:", hitsCount[0].count);
+  // Master map to accumulate results across all batches
+  const playerMap = new Map();
 
-  // Check rounds for these battles
-  const [roundsCount] = await pool.query("SELECT COUNT(*) as count FROM rounds WHERE battle_id IN (?)", [battleIds]);
-  console.log("Rounds for selected battles:", roundsCount[0].count);
+  // Process battles in batches
+  const totalBatches = Math.ceil(battleIds.length / BATCH_SIZE);
+  
+  for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+    const start = batchIndex * BATCH_SIZE;
+    const end = Math.min(start + BATCH_SIZE, battleIds.length);
+    const batchIds = battleIds.slice(start, end);
+    
+    console.log(`Processing batch ${batchIndex + 1}/${totalBatches} (battles ${start + 1}-${end})`);
 
-  // Check hits for these rounds
-  const [hitsForBattles] = await pool.query(
-    `SELECT COUNT(*) as count FROM hits h 
-     JOIN rounds r ON h.round_id = r.id 
-     WHERE r.battle_id IN (?)`,
-    [battleIds]
-  );
-  console.log("Hits for selected battles:", hitsForBattles[0].count);
+    // Create placeholders for parameterized query
+    const placeholders = batchIds.map(() => "?").join(",");
 
-  // Aggregate totals per fighter
-  const [playerTotals] = await pool.query(
-    `
-    SELECT 
-      h.fighter_id,
-      p.name as player_name,
-      p.avatar as player_avatar,
-      SUM(h.damage) as total_damage,
-      COUNT(*) as hit_count
-    FROM hits h
-    JOIN rounds r ON h.round_id = r.id
-    LEFT JOIN players p ON h.fighter_id = p.id
-    WHERE r.battle_id IN (?)
-    GROUP BY h.fighter_id
-    ORDER BY total_damage DESC
-  `,
-    [battleIds]
-  );
+    // Combined query: Get player totals, weapon breakdown, and side in a single pass
+    const [combinedData] = await pool.query(
+      `
+      SELECT 
+        h.fighter_id,
+        p.name as player_name,
+        p.avatar as player_avatar,
+        h.item_id,
+        h.side,
+        SUM(h.damage) as damage,
+        COUNT(*) as hits,
+        MIN(CONCAT(LPAD(r.battle_id, 10, '0'), '|', COALESCE(DATE_FORMAT(h.created_at, '%Y%m%d%H%i%s'), '00000000000000'))) as first_hit
+      FROM hits h
+      JOIN rounds r ON h.round_id = r.id
+      LEFT JOIN players p ON h.fighter_id = p.id
+      WHERE r.battle_id IN (${placeholders})
+      GROUP BY h.fighter_id, p.name, p.avatar, h.item_id, h.side
+      ORDER BY h.fighter_id
+      `,
+      batchIds
+    );
 
-  // Get damage breakdown per weapon for each fighter
-  const [weaponBreakdown] = await pool.query(
-    `
-    SELECT 
-      h.fighter_id,
-      h.item_id,
-      SUM(h.damage) as damage,
-      COUNT(*) as hits
-    FROM hits h
-    JOIN rounds r ON h.round_id = r.id
-    WHERE r.battle_id IN (?)
-    GROUP BY h.fighter_id, h.item_id
-  `,
-    [battleIds]
-  );
+    // Merge batch results into master map
+    for (const row of combinedData) {
+      const fighterId = row.fighter_id;
+      
+      if (!playerMap.has(fighterId)) {
+        playerMap.set(fighterId, {
+          fighter_id: fighterId,
+          player_name: row.player_name,
+          player_avatar: row.player_avatar,
+          total_damage: 0,
+          hit_count: 0,
+          weapons: {},
+          // Track first hit for side determination
+          _firstHit: row.first_hit,
+          _firstHitSide: row.side,
+        });
+      }
 
-  // Build weapon breakdown lookup map: fighter_id -> { item_id: { damage, hits, item_name } }
-  const weaponLookup = new Map();
-  for (const row of weaponBreakdown) {
-    if (!weaponLookup.has(row.fighter_id)) {
-      weaponLookup.set(row.fighter_id, {});
+      const player = playerMap.get(fighterId);
+      
+      // Accumulate damage and hits
+      player.total_damage += Number(row.damage);
+      player.hit_count += Number(row.hits);
+
+      // Build weapon breakdown
+      const itemName = getItemName(row.item_id);
+      if (!player.weapons[itemName]) {
+        player.weapons[itemName] = { damage: 0, hits: 0 };
+      }
+      player.weapons[itemName].damage += Number(row.damage);
+      player.weapons[itemName].hits += Number(row.hits);
+
+      // Update first hit tracking for side determination (keep earliest)
+      if (row.side && row.first_hit < player._firstHit) {
+        player._firstHit = row.first_hit;
+        player._firstHitSide = row.side;
+      }
     }
-    const itemName = getItemName(row.item_id);
-    weaponLookup.get(row.fighter_id)[itemName] = {
-      damage: Number(row.damage),
-      hits: Number(row.hits),
-    };
   }
 
-  // Determine side based on the first battle (lowest battle_id, then earliest hit) where the fighter appears
-  const [firstSides] = await pool.query(
-    `
-    SELECT
-      fighter_id,
-      SUBSTRING_INDEX(
-        MIN(
-          CONCAT(
-            LPAD(r.battle_id, 10, '0'),
-            '|',
-            COALESCE(DATE_FORMAT(h.created_at, '%Y%m%d%H%i%s'), '00000000000000'),
-            '|',
-            h.side
-          )
-        ),
-        '|',
-        -1
-      ) AS side
-    FROM hits h
-    JOIN rounds r ON h.round_id = r.id
-    WHERE r.battle_id IN (?) AND h.side IS NOT NULL
-    GROUP BY fighter_id
-  `,
-    [battleIds]
-  );
-
-  const sideLookup = new Map(firstSides.map((row) => [row.fighter_id, row.side]));
-
-  const summaryRows = playerTotals.map((player) => ({
-    ...player,
-    side: sideLookup.get(player.fighter_id) || "UNKNOWN",
-    weapons: weaponLookup.get(player.fighter_id) || {},
-  }));
+  // Convert to array and sort by total damage
+  const summaryRows = Array.from(playerMap.values())
+    .map((player) => ({
+      fighter_id: player.fighter_id,
+      player_name: player.player_name,
+      player_avatar: player.player_avatar,
+      total_damage: player.total_damage,
+      hit_count: player.hit_count,
+      side: player._firstHitSide || "UNKNOWN",
+      weapons: player.weapons,
+    }))
+    .sort((a, b) => b.total_damage - a.total_damage);
 
   console.log("Summary rows returned:", summaryRows.length);
   return summaryRows;
