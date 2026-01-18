@@ -231,7 +231,7 @@ function normalizeHitSide(rawSide) {
 }
 
 // Batch size for processing battles in chunks to prevent memory issues
-const BATCH_SIZE = 50;
+const BATCH_SIZE = 20;
 
 /**
  * Get war summary for selected battles using batching
