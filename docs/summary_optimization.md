@@ -69,3 +69,34 @@ Incomplete battle detected (rounds < 9 or no end_date)
 - Refresh requires API key if set in settings
 - Large selections may take longer but won't hang the server
 
+---
+
+## Battle Summary Caching (NEW)
+
+### Completed Battle Caching
+
+For battles where one side has won (5:X or X:5 score), summaries are now cached in `player_battle_stats` table:
+
+- **First request**: Calculates stats, caches to database
+- **Subsequent requests**: Uses cached data (much faster)
+
+### Player Nationality
+
+- Players now have `nationality_id` stored from API
+- `countries` table maps ID → country name
+- Country column visible in summary table (sortable)
+- Multi-select country filter in summary panel
+
+### Database Tables
+
+| Table | Purpose |
+|-------|---------|
+| `countries` | Country ID → name mapping (from battles) |
+| `player_battle_stats` | Cached per-player stats per battle |
+
+### Performance
+
+| Scenario | Before | After |
+|----------|--------|-------|
+| 100 completed battles | ~5s | ~200ms (cached) |
+| Mixed complete/incomplete | Slow | Fast for cached, fresh for incomplete |

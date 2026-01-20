@@ -72,6 +72,10 @@ export async function fetchAndSaveBattle(battleId, apiKey) {
     return war;
   }
 
+  // Cache country info from attacker and defender
+  await cacheCountry(war.attackers.id, war.attackers.name, war.attackers.avatar);
+  await cacheCountry(war.defenders.id, war.defenders.name, war.defenders.avatar);
+
   // Save battle to database
   await pool.query(
     `
@@ -168,35 +172,62 @@ export async function fetchAndSaveBattle(battleId, apiKey) {
 }
 
 /**
- * Cache player info from API
+ * Cache player info from API (including nationality_id)
  * @param {Array<number>} playerIds - List of player IDs
+ * @param {string} apiKey - API key for requests
  */
 async function cachePlayerInfo(playerIds, apiKey) {
   for (const playerId of playerIds) {
     try {
-      // Check if player already cached (within last 24 hours)
+      // Check if player already cached with nationality (within last 24 hours)
       const [existing] = await pool.query(
-        "SELECT id FROM players WHERE id = ? AND updated_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)",
+        "SELECT id, nationality_id FROM players WHERE id = ? AND updated_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)",
         [playerId]
       );
 
-      if (existing.length === 0) {
+      // Fetch if not cached or missing nationality_id
+      if (existing.length === 0 || existing[0].nationality_id === null) {
         const account = await fetchAccount(playerId, apiKey);
         await pool.query(
           `
-          INSERT INTO players (id, name, avatar)
-          VALUES (?, ?, ?)
+          INSERT INTO players (id, name, avatar, nationality_id)
+          VALUES (?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE
             name = VALUES(name),
             avatar = VALUES(avatar),
+            nationality_id = VALUES(nationality_id),
             updated_at = CURRENT_TIMESTAMP
         `,
-          [account.id, account.username, account.avatar]
+          [account.id, account.username, account.avatar, account.nationality_id || null]
         );
       }
     } catch (error) {
       console.log(`Failed to cache player ${playerId}:`, error.message);
     }
+  }
+}
+
+/**
+ * Cache country info from battle data (attacker/defender are countries)
+ * @param {number} countryId - Country ID
+ * @param {string} name - Country name
+ * @param {string} avatar - Country avatar URL
+ */
+async function cacheCountry(countryId, name, avatar) {
+  try {
+    await pool.query(
+      `
+      INSERT INTO countries (id, name, avatar)
+      VALUES (?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        name = VALUES(name),
+        avatar = VALUES(avatar),
+        updated_at = CURRENT_TIMESTAMP
+    `,
+      [countryId, name, avatar]
+    );
+  } catch (error) {
+    console.log(`Failed to cache country ${countryId}:`, error.message);
   }
 }
 
@@ -234,92 +265,324 @@ function normalizeHitSide(rawSide) {
 const BATCH_SIZE = 20;
 
 /**
- * Get war summary for selected battles using batching
- * Processes battles in batches to prevent server overload while allowing unlimited selection
+ * Check if a battle is complete (one side has 5 wins)
+ * @param {Object} battle - Battle object with attackers_score and defenders_score
+ * @returns {boolean}
+ */
+function isBattleComplete(battle) {
+  return battle.attackers_score >= 5 || battle.defenders_score >= 5;
+}
+
+/**
+ * Get cached summary for a battle from player_battle_stats table
+ * @param {number} battleId - Battle ID
+ * @returns {Promise<Array>} - Cached player stats or empty array
+ */
+async function getCachedBattleSummary(battleId) {
+  const [rows] = await pool.query(
+    `SELECT * FROM player_battle_stats WHERE battle_id = ?`,
+    [battleId]
+  );
+  return rows;
+}
+
+/**
+ * Cache battle summary to player_battle_stats table
+ * @param {number} battleId - Battle ID
+ * @param {Array} playerStats - Array of player stat objects
+ */
+async function cacheBattleSummary(battleId, playerStats) {
+  if (!playerStats || playerStats.length === 0) return;
+
+  // Delete existing cache for this battle
+  await pool.query(`DELETE FROM player_battle_stats WHERE battle_id = ?`, [battleId]);
+
+  // Insert new cached stats
+  const values = playerStats.map((stat) => [
+    battleId,
+    stat.fighter_id,
+    stat.player_name,
+    stat.player_avatar,
+    stat.nationality_id || null,
+    stat.total_damage,
+    stat.hit_count,
+    stat.side,
+    JSON.stringify(stat.weapons || {}),
+  ]);
+
+  if (values.length > 0) {
+    await pool.query(
+      `INSERT INTO player_battle_stats 
+       (battle_id, player_id, player_name, player_avatar, nationality_id, total_damage, hit_count, side, weapons)
+       VALUES ?`,
+      [values]
+    );
+    console.log(`Cached summary for battle ${battleId}: ${values.length} players`);
+  }
+}
+
+/**
+ * Calculate summary for a batch of battles (not from cache)
+ * @param {Array<number>} battleIds - Battle IDs to calculate
+ * @returns {Promise<Map>} - Map of player stats
+ */
+async function calculateBatchSummary(battleIds) {
+  const playerMap = new Map();
+
+  if (battleIds.length === 0) return playerMap;
+
+  const placeholders = battleIds.map(() => "?").join(",");
+
+  // Combined query: Get player totals, weapon breakdown, side, and nationality
+  const [combinedData] = await pool.query(
+    `
+    SELECT 
+      h.fighter_id,
+      p.name as player_name,
+      p.avatar as player_avatar,
+      p.nationality_id,
+      c.name as country_name,
+      c.avatar as country_avatar,
+      h.item_id,
+      h.side,
+      SUM(h.damage) as damage,
+      COUNT(*) as hits,
+      MIN(CONCAT(LPAD(r.battle_id, 10, '0'), '|', COALESCE(DATE_FORMAT(h.created_at, '%Y%m%d%H%i%s'), '00000000000000'))) as first_hit
+    FROM hits h
+    JOIN rounds r ON h.round_id = r.id
+    LEFT JOIN players p ON h.fighter_id = p.id
+    LEFT JOIN countries c ON p.nationality_id = c.id
+    WHERE r.battle_id IN (${placeholders})
+    GROUP BY h.fighter_id, p.name, p.avatar, p.nationality_id, c.name, c.avatar, h.item_id, h.side
+    ORDER BY h.fighter_id
+    `,
+    battleIds
+  );
+
+  // Merge results into map
+  for (const row of combinedData) {
+    const fighterId = row.fighter_id;
+
+    if (!playerMap.has(fighterId)) {
+      playerMap.set(fighterId, {
+        fighter_id: fighterId,
+        player_name: row.player_name,
+        player_avatar: row.player_avatar,
+        nationality_id: row.nationality_id,
+        country_name: row.country_name,
+        country_avatar: row.country_avatar,
+        total_damage: 0,
+        hit_count: 0,
+        weapons: {},
+          // Track first hit for side determination
+        _firstHit: row.first_hit,
+        _firstHitSide: row.side,
+      });
+    }
+
+    const player = playerMap.get(fighterId);
+
+    // Accumulate damage and hits
+    player.total_damage += Number(row.damage);
+    player.hit_count += Number(row.hits);
+
+    // Build weapon breakdown
+    const itemName = getItemName(row.item_id);
+    if (!player.weapons[itemName]) {
+      player.weapons[itemName] = { damage: 0, hits: 0 };
+    }
+    player.weapons[itemName].damage += Number(row.damage);
+    player.weapons[itemName].hits += Number(row.hits);
+
+    // Update first hit tracking for side determination (keep earliest)
+    if (row.side && row.first_hit < player._firstHit) {
+      player._firstHit = row.first_hit;
+      player._firstHitSide = row.side;
+    }
+  }
+
+  return playerMap;
+}
+
+/**
+ * Get war summary for selected battles using batching and caching
+ * Uses cached summaries for completed battles, calculates fresh for incomplete
  * @param {Array<number>} battleIds - List of battle IDs
- * @returns {Promise<Array>} - Summary with player damage totals
+ * @returns {Promise<Array>} - Summary with player damage totals and nationality
  */
 export async function getWarSummary(battleIds) {
   if (!battleIds || battleIds.length === 0) {
     return [];
   }
 
-  console.log(`getWarSummary called with ${battleIds.length} battles (processing in batches of ${BATCH_SIZE})`);
+  console.log(`getWarSummary called with ${battleIds.length} battles`);
 
-  // Master map to accumulate results across all batches
+  // Get battle details to determine which are complete vs incomplete
+  const placeholders = battleIds.map(() => "?").join(",");
+  const [battles] = await pool.query(
+    `SELECT id, attackers_score, defenders_score FROM battles WHERE id IN (${placeholders})`,
+    battleIds
+  );
+
+  // Separate complete and incomplete battles
+  const completeBattleIds = [];
+  const incompleteBattleIds = [];
+
+  for (const battle of battles) {
+    if (isBattleComplete(battle)) {
+      completeBattleIds.push(battle.id);
+    } else {
+      incompleteBattleIds.push(battle.id);
+    }
+  }
+
+  console.log(`Complete battles: ${completeBattleIds.length}, Incomplete: ${incompleteBattleIds.length}`);
+
+  // Master map to accumulate results
   const playerMap = new Map();
 
-  // Process battles in batches
-  const totalBatches = Math.ceil(battleIds.length / BATCH_SIZE);
-  
-  for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
-    const start = batchIndex * BATCH_SIZE;
-    const end = Math.min(start + BATCH_SIZE, battleIds.length);
-    const batchIds = battleIds.slice(start, end);
-    
-    console.log(`Processing batch ${batchIndex + 1}/${totalBatches} (battles ${start + 1}-${end})`);
+  // Process complete battles - try to use cache first
+  for (const battleId of completeBattleIds) {
+    const cachedStats = await getCachedBattleSummary(battleId);
 
-    // Create placeholders for parameterized query
-    const placeholders = batchIds.map(() => "?").join(",");
+    if (cachedStats.length > 0) {
+      // Use cached data
+      console.log(`Using cached summary for battle ${battleId}`);
+      for (const stat of cachedStats) {
+        const fighterId = stat.player_id;
 
-    // Combined query: Get player totals, weapon breakdown, and side in a single pass
-    const [combinedData] = await pool.query(
-      `
-      SELECT 
-        h.fighter_id,
-        p.name as player_name,
-        p.avatar as player_avatar,
-        h.item_id,
-        h.side,
-        SUM(h.damage) as damage,
-        COUNT(*) as hits,
-        MIN(CONCAT(LPAD(r.battle_id, 10, '0'), '|', COALESCE(DATE_FORMAT(h.created_at, '%Y%m%d%H%i%s'), '00000000000000'))) as first_hit
-      FROM hits h
-      JOIN rounds r ON h.round_id = r.id
-      LEFT JOIN players p ON h.fighter_id = p.id
-      WHERE r.battle_id IN (${placeholders})
-      GROUP BY h.fighter_id, p.name, p.avatar, h.item_id, h.side
-      ORDER BY h.fighter_id
-      `,
-      batchIds
-    );
+        if (!playerMap.has(fighterId)) {
+          // Get country name and avatar for this player
+          const [countryRows] = await pool.query(
+            `SELECT c.name, c.avatar FROM countries c JOIN players p ON p.nationality_id = c.id WHERE p.id = ?`,
+            [fighterId]
+          );
 
-    // Merge batch results into master map
-    for (const row of combinedData) {
-      const fighterId = row.fighter_id;
-      
-      if (!playerMap.has(fighterId)) {
-        playerMap.set(fighterId, {
-          fighter_id: fighterId,
-          player_name: row.player_name,
-          player_avatar: row.player_avatar,
-          total_damage: 0,
-          hit_count: 0,
-          weapons: {},
-          // Track first hit for side determination
-          _firstHit: row.first_hit,
-          _firstHitSide: row.side,
-        });
+          playerMap.set(fighterId, {
+            fighter_id: fighterId,
+            player_name: stat.player_name,
+            player_avatar: stat.player_avatar,
+            nationality_id: stat.nationality_id,
+            country_name: countryRows[0]?.name || null,
+            country_avatar: countryRows[0]?.avatar || null,
+            total_damage: 0,
+            hit_count: 0,
+            weapons: {},
+            side: stat.side,
+          });
+        }
+
+        const player = playerMap.get(fighterId);
+        player.total_damage += Number(stat.total_damage);
+        player.hit_count += Number(stat.hit_count);
+
+        // Merge weapons
+        const weapons = typeof stat.weapons === "string" ? JSON.parse(stat.weapons) : stat.weapons || {};
+        for (const [weapon, data] of Object.entries(weapons)) {
+          if (!player.weapons[weapon]) {
+            player.weapons[weapon] = { damage: 0, hits: 0 };
+          }
+          player.weapons[weapon].damage += Number(data.damage || 0);
+          player.weapons[weapon].hits += Number(data.hits || 0);
+        }
       }
+    } else {
+      // No cache - calculate and then cache
+      console.log(`Calculating and caching summary for battle ${battleId}`);
+      const batchMap = await calculateBatchSummary([battleId]);
 
-      const player = playerMap.get(fighterId);
-      
-      // Accumulate damage and hits
-      player.total_damage += Number(row.damage);
-      player.hit_count += Number(row.hits);
+      // Cache the calculated summary
+      const statsToCache = Array.from(batchMap.values()).map((p) => ({
+        fighter_id: p.fighter_id,
+        player_name: p.player_name,
+        player_avatar: p.player_avatar,
+        nationality_id: p.nationality_id,
+        total_damage: p.total_damage,
+        hit_count: p.hit_count,
+        side: p._firstHitSide || "UNKNOWN",
+        weapons: p.weapons,
+      }));
+      await cacheBattleSummary(battleId, statsToCache);
 
-      // Build weapon breakdown
-      const itemName = getItemName(row.item_id);
-      if (!player.weapons[itemName]) {
-        player.weapons[itemName] = { damage: 0, hits: 0 };
+      // Merge into master map
+      for (const [fighterId, stat] of batchMap) {
+        if (!playerMap.has(fighterId)) {
+          playerMap.set(fighterId, {
+            fighter_id: stat.fighter_id,
+            player_name: stat.player_name,
+            player_avatar: stat.player_avatar,
+            nationality_id: stat.nationality_id,
+            country_name: stat.country_name,
+            country_avatar: stat.country_avatar,
+            total_damage: 0,
+            hit_count: 0,
+            weapons: {},
+            side: stat._firstHitSide || "UNKNOWN",
+          });
+        }
+
+        const player = playerMap.get(fighterId);
+        player.total_damage += stat.total_damage;
+        player.hit_count += stat.hit_count;
+
+        // Merge weapons
+        for (const [weapon, data] of Object.entries(stat.weapons)) {
+          if (!player.weapons[weapon]) {
+            player.weapons[weapon] = { damage: 0, hits: 0 };
+          }
+          player.weapons[weapon].damage += data.damage;
+          player.weapons[weapon].hits += data.hits;
+        }
       }
-      player.weapons[itemName].damage += Number(row.damage);
-      player.weapons[itemName].hits += Number(row.hits);
+    }
+  }
 
-      // Update first hit tracking for side determination (keep earliest)
-      if (row.side && row.first_hit < player._firstHit) {
-        player._firstHit = row.first_hit;
-        player._firstHitSide = row.side;
+  // Process incomplete battles in batches (no caching)
+  if (incompleteBattleIds.length > 0) {
+    const totalBatches = Math.ceil(incompleteBattleIds.length / BATCH_SIZE);
+
+    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+      const start = batchIndex * BATCH_SIZE;
+      const end = Math.min(start + BATCH_SIZE, incompleteBattleIds.length);
+      const batchIds = incompleteBattleIds.slice(start, end);
+
+      console.log(`Processing incomplete batch ${batchIndex + 1}/${totalBatches}`);
+      const batchMap = await calculateBatchSummary(batchIds);
+
+      // Merge into master map
+      for (const [fighterId, stat] of batchMap) {
+        if (!playerMap.has(fighterId)) {
+          playerMap.set(fighterId, {
+            fighter_id: stat.fighter_id,
+            player_name: stat.player_name,
+            player_avatar: stat.player_avatar,
+            nationality_id: stat.nationality_id,
+            country_name: stat.country_name,
+            country_avatar: stat.country_avatar,
+            total_damage: 0,
+            hit_count: 0,
+            weapons: {},
+            side: stat._firstHitSide || "UNKNOWN",
+          });
+        }
+
+        const player = playerMap.get(fighterId);
+        player.total_damage += stat.total_damage;
+        player.hit_count += stat.hit_count;
+
+        // Merge weapons
+        for (const [weapon, data] of Object.entries(stat.weapons)) {
+          if (!player.weapons[weapon]) {
+            player.weapons[weapon] = { damage: 0, hits: 0 };
+          }
+          player.weapons[weapon].damage += data.damage;
+          player.weapons[weapon].hits += data.hits;
+        }
+
+        // Update side if not set
+        if (!player.side || player.side === "UNKNOWN") {
+          player.side = stat._firstHitSide || "UNKNOWN";
+        }
       }
     }
   }
@@ -330,9 +593,12 @@ export async function getWarSummary(battleIds) {
       fighter_id: player.fighter_id,
       player_name: player.player_name,
       player_avatar: player.player_avatar,
+      nationality_id: player.nationality_id,
+      country_name: player.country_name,
+      country_avatar: player.country_avatar,
       total_damage: player.total_damage,
       hit_count: player.hit_count,
-      side: player._firstHitSide || "UNKNOWN",
+      side: player.side || "UNKNOWN",
       weapons: player.weapons,
     }))
     .sort((a, b) => b.total_damage - a.total_damage);
@@ -348,3 +614,4 @@ export async function getWarSummary(battleIds) {
 export async function deleteBattle(battleId) {
   await pool.query("DELETE FROM battles WHERE id = ?", [battleId]);
 }
+

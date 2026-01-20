@@ -50,6 +50,13 @@ const summarySortAsc = ref(false);
 // Refresh state for individual battles
 const refreshingBattleId = ref(null);
 
+// Summary country filter state
+const summaryCountryFilter = ref([]);
+const summaryCountrySearch = ref("");
+const summaryCountryDropdownOpen = ref(false);
+const summaryCountryTriggerRef = ref(null);
+const summaryCountryDropdownPosition = ref({ top: 0, left: 0, width: 0 });
+
 const hasWeaponBreakdown = (player) => !!player?.weapons && Object.keys(player.weapons).length > 0;
 
 function isWeaponExpanded(fighterId) {
@@ -125,6 +132,29 @@ const excludeDropdownStyle = computed(() => ({
 const hasActiveFilters = computed(() => {
   return countryFilters.value.length > 0 || excludeCountryFilters.value.length > 0 || dateFrom.value || dateTo.value;
 });
+
+// Summary country filter computed properties
+const availableSummaryCountries = computed(() => {
+  const countries = new Set();
+  summary.value.forEach((player) => {
+    if (player.country_name) countries.add(player.country_name);
+  });
+  return Array.from(countries).sort();
+});
+
+const filteredSummaryCountryOptions = computed(() => {
+  if (!summaryCountrySearch.value.trim()) {
+    return availableSummaryCountries.value;
+  }
+  const query = summaryCountrySearch.value.toLowerCase();
+  return availableSummaryCountries.value.filter((c) => c.toLowerCase().includes(query));
+});
+
+const summaryCountryDropdownStyle = computed(() => ({
+  top: `${summaryCountryDropdownPosition.value.top}px`,
+  left: `${summaryCountryDropdownPosition.value.left}px`,
+  width: `${summaryCountryDropdownPosition.value.width}px`,
+}));
 
 const playersWithWeaponBreakdown = computed(() => summary.value.filter((player) => hasWeaponBreakdown(player)));
 
@@ -208,10 +238,16 @@ const combinedBattleIds = computed(() => {
 
 const hasSelectedBattles = computed(() => combinedBattleIds.value.length > 0);
 
-// Sorted summary based on current sort key
+// Sorted summary based on current sort key (with country filter applied)
 const sortedSummary = computed(() => {
-  const sorted = [...summary.value];
-  sorted.sort((a, b) => {
+  let filtered = [...summary.value];
+  
+  // Apply country filter
+  if (summaryCountryFilter.value.length > 0) {
+    filtered = filtered.filter((player) => summaryCountryFilter.value.includes(player.country_name));
+  }
+  
+  filtered.sort((a, b) => {
     let aVal = a[summarySortKey.value];
     let bVal = b[summarySortKey.value];
     
@@ -227,7 +263,7 @@ const sortedSummary = computed(() => {
     bVal = Number(bVal) || 0;
     return summarySortAsc.value ? aVal - bVal : bVal - aVal;
   });
-  return sorted;
+  return filtered;
 });
 
 // Function to toggle sort on a column
@@ -500,6 +536,25 @@ function filteredSummaryReset() {
   }
 }
 
+// Summary country filter functions
+function toggleSummaryCountryOption(option) {
+  if (summaryCountryFilter.value.includes(option)) {
+    summaryCountryFilter.value = summaryCountryFilter.value.filter((c) => c !== option);
+  } else {
+    summaryCountryFilter.value = [...summaryCountryFilter.value, option];
+  }
+}
+
+function removeSummaryCountryChip(option, event) {
+  event?.stopPropagation();
+  summaryCountryFilter.value = summaryCountryFilter.value.filter((c) => c !== option);
+}
+
+function clearSummaryCountryFilter() {
+  summaryCountryFilter.value = [];
+  summaryCountrySearch.value = "";
+}
+
 function setDropdownPosition(triggerRef, positionRef) {
   const el = triggerRef.value;
   if (!el) {
@@ -520,6 +575,9 @@ function updateDropdownPositions() {
   if (excludeDropdownOpen.value) {
     setDropdownPosition(excludeTriggerRef, excludeDropdownPosition);
   }
+  if (summaryCountryDropdownOpen.value) {
+    setDropdownPosition(summaryCountryTriggerRef, summaryCountryDropdownPosition);
+  }
 }
 
 function closeDropdowns(event) {
@@ -527,10 +585,12 @@ function closeDropdowns(event) {
   const insideContainer = target?.closest?.(".multiselect-container");
   const insideDropdown =
     target?.closest?.("[data-dropdown-panel='country']") ||
-    target?.closest?.("[data-dropdown-panel='country-exclude']");
+    target?.closest?.("[data-dropdown-panel='country-exclude']") ||
+    target?.closest?.("[data-dropdown-panel='summary-country']");
   if (!insideContainer && !insideDropdown) {
     includeDropdownOpen.value = false;
     excludeDropdownOpen.value = false;
+    summaryCountryDropdownOpen.value = false;
   }
 }
 
@@ -543,6 +603,7 @@ function exportSummaryCsv() {
   const headers = [
     "Rank",
     "Player",
+    "Country",
     "Side",
     "Total Damage",
     "Hits",
@@ -554,6 +615,7 @@ function exportSummaryCsv() {
     const baseRow = [
       index + 1,
       player.player_name || `Player #${player.fighter_id}`,
+      player.country_name || "",
       player.side,
       player.total_damage,
       player.hit_count,
@@ -589,10 +651,6 @@ function exportSummaryCsv() {
   URL.revokeObjectURL(url);
 }
 
-watch(summary, () => {
-  expandedPlayers.value = new Set();
-});
-
 watch(includeDropdownOpen, async (isOpen) => {
   if (isOpen) {
     await nextTick();
@@ -605,6 +663,20 @@ watch(excludeDropdownOpen, async (isOpen) => {
     await nextTick();
     setDropdownPosition(excludeTriggerRef, excludeDropdownPosition);
   }
+});
+
+watch(summaryCountryDropdownOpen, async (isOpen) => {
+  if (isOpen) {
+    await nextTick();
+    setDropdownPosition(summaryCountryTriggerRef, summaryCountryDropdownPosition);
+  }
+});
+
+// Reset summary country filter when summary changes
+watch(summary, () => {
+  expandedPlayers.value = new Set();
+  summaryCountryFilter.value = [];
+  summaryCountrySearch.value = "";
 });
 
 watch(
@@ -1348,7 +1420,104 @@ onUnmounted(() => {
               <p class="text-sm text-slate-500">Aggregated damage from selected battles</p>
             </div>
             <div class="flex items-center gap-3">
-              <span v-if="summary.length" class="text-sm text-slate-400 font-mono">{{ summary.length }} players</span>
+              <span v-if="summary.length" class="text-sm text-slate-400 font-mono">
+                {{ sortedSummary.length }}<span v-if="summaryCountryFilter.length" class="text-emerald-400">/{{ summary.length }}</span> players
+              </span>
+              
+              <!-- Country filter dropdown for summary -->
+              <div v-if="availableSummaryCountries.length > 0" class="multiselect-container relative">
+                <button
+                  ref="summaryCountryTriggerRef"
+                  type="button"
+                  class="flex items-center gap-2 px-3 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium rounded-lg border border-slate-700 hover:border-emerald-500/30 transition-colors"
+                  @click.stop="summaryCountryDropdownOpen = !summaryCountryDropdownOpen"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
+                  </svg>
+                  <span v-if="summaryCountryFilter.length">{{ summaryCountryFilter.length }} countries</span>
+                  <span v-else>Filter by country</span>
+                  <svg class="w-3 h-3 transition-transform" :class="{ 'rotate-180': summaryCountryDropdownOpen }" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                  </svg>
+                </button>
+                
+                <!-- Dropdown panel -->
+                <Teleport to="body">
+                  <div
+                    v-if="summaryCountryDropdownOpen"
+                    data-dropdown-panel="summary-country"
+                    class="fixed z-50 bg-slate-800 border border-slate-700 rounded-lg shadow-xl overflow-hidden min-w-[200px]"
+                    :style="summaryCountryDropdownStyle"
+                    @click.stop
+                  >
+                    <!-- Search -->
+                    <div class="p-2 border-b border-slate-700">
+                      <div class="relative">
+                        <svg class="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                        </svg>
+                        <input
+                          v-model="summaryCountrySearch"
+                          type="text"
+                          placeholder="Search..."
+                          class="w-full pl-8 pr-8 py-1.5 bg-slate-900 border border-slate-700 rounded text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500/50"
+                          @click.stop
+                        />
+                        <button
+                          v-if="summaryCountrySearch"
+                          class="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-white rounded"
+                          @click.stop="summaryCountrySearch = ''"
+                          type="button"
+                        >
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <!-- Options -->
+                    <div class="max-h-60 overflow-y-auto">
+                      <template v-if="filteredSummaryCountryOptions.length">
+                        <button
+                          v-for="country in filteredSummaryCountryOptions"
+                          :key="country"
+                          type="button"
+                          class="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-slate-700/60 transition-colors"
+                          :class="{ 'bg-emerald-500/10': summaryCountryFilter.includes(country) }"
+                          @click.stop="toggleSummaryCountryOption(country)"
+                        >
+                          <span
+                            class="w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors"
+                            :class="summaryCountryFilter.includes(country) ? 'bg-emerald-500 border-emerald-500' : 'border-slate-500'"
+                          >
+                            <svg v-if="summaryCountryFilter.includes(country)" class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>
+                            </svg>
+                          </span>
+                          <span class="text-sm text-slate-200">{{ country }}</span>
+                        </button>
+                      </template>
+                      <div v-else class="px-3 py-4 text-center text-sm text-slate-500">
+                        No countries match "{{ summaryCountrySearch }}"
+                      </div>
+                    </div>
+                    
+                    <!-- Footer -->
+                    <div v-if="summaryCountryFilter.length" class="p-2 border-t border-slate-700 bg-slate-800/80">
+                      <button
+                        type="button"
+                        class="w-full px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+                        @click.stop="clearSummaryCountryFilter"
+                      >
+                        Clear selection ({{ summaryCountryFilter.length }})
+                      </button>
+                    </div>
+                  </div>
+                </Teleport>
+              </div>
+              
               <button
                 class="px-3 py-2 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-lg border border-slate-700 hover:border-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 :disabled="!playersWithWeaponBreakdown.length"
@@ -1392,7 +1561,7 @@ onUnmounted(() => {
             <table class="w-full text-sm">
               <thead class="sticky top-0 bg-slate-900 text-slate-400 font-medium uppercase text-xs tracking-wider z-10">
                 <tr>
-                  <th class="px-4 py-3 text-left">#</th>
+                  <th class="px-2 py-3 text-left w-12">#</th>
                   <th 
                     class="px-4 py-3 text-left cursor-pointer hover:text-emerald-400 transition-colors select-none"
                     @click="toggleSummarySort('player_name')"
@@ -1400,6 +1569,18 @@ onUnmounted(() => {
                     <div class="flex items-center gap-1">
                       Player
                       <svg v-if="summarySortKey === 'player_name'" class="w-3 h-3 transition-transform" :class="{ 'rotate-180': !summarySortAsc }" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                      </svg>
+                    </div>
+                  </th>
+                  <th 
+                    class="px-2 py-3 text-center cursor-pointer hover:text-emerald-400 transition-colors select-none w-10"
+                    title="Sort by Country"
+                    @click="toggleSummarySort('country_name')"
+                  >
+                    <div class="flex items-center justify-center gap-1">
+                      🏳️
+                      <svg v-if="summarySortKey === 'country_name'" class="w-3 h-3 transition-transform" :class="{ 'rotate-180': !summarySortAsc }" fill="currentColor" viewBox="0 0 20 20">
                         <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
                       </svg>
                     </div>
@@ -1444,7 +1625,7 @@ onUnmounted(() => {
               <tbody class="divide-y divide-slate-800/50">
                 <template v-for="(player, index) in sortedSummary" :key="`${player.fighter_id}-${player.side}`">
                   <tr class="hover:bg-slate-800/30 transition-colors group">
-                    <td class="px-4 py-3 font-mono text-slate-600">{{ index + 1 }}</td>
+                    <td class="px-2 py-3 font-mono text-slate-600 text-xs">{{ index + 1 }}</td>
                     <td class="px-4 py-3">
                       <div class="flex items-center gap-2">
                         <!-- Player avatar -->
@@ -1469,6 +1650,18 @@ onUnmounted(() => {
                         >
                           {{ player.player_name || `Player #${player.fighter_id}` }}
                         </a>
+                      </div>
+                    </td>
+                    <td class="px-2 py-3 text-center">
+                      <div class="flex justify-center">
+                        <img 
+                          v-if="player.country_avatar" 
+                          :src="player.country_avatar" 
+                          :alt="player.country_name" 
+                          :title="player.country_name"
+                          class="w-6 h-4 object-cover rounded shadow-sm border border-slate-700/50"
+                        />
+                        <span v-else class="text-slate-600 text-[10px]">—</span>
                       </div>
                     </td>
                     <td class="px-4 py-3">
@@ -1513,7 +1706,7 @@ onUnmounted(() => {
                   </tr>
                   <template v-if="hasWeaponBreakdown(player) && isWeaponExpanded(player.fighter_id)">
                     <tr :key="`weapons-${player.fighter_id}`" class="bg-slate-900/40">
-                      <td colspan="6">
+                      <td colspan="7">
                         <div class="flex flex-wrap gap-1.5 pt-2 justify-center">
                           <template v-for="weapon in WEAPON_ORDER" :key="`${player.fighter_id}-${weapon}`">
                             <span

@@ -53,5 +53,32 @@ CREATE TABLE players (
     id INT PRIMARY KEY,
     name VARCHAR(255),
     avatar VARCHAR(500),
+    nationality_id INT DEFAULT NULL,         -- ID narodowości gracza z API
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Tabela krajów (mapowanie nationality_id -> nazwa kraju)
+CREATE TABLE countries (
+    id INT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    avatar VARCHAR(500),
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Tabela cache'u statystyk graczy per bitwa (optymalizacja summary)
+CREATE TABLE player_battle_stats (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    battle_id INT NOT NULL,
+    player_id INT NOT NULL,
+    player_name VARCHAR(255),
+    player_avatar VARCHAR(500),
+    nationality_id INT,
+    total_damage BIGINT DEFAULT 0,
+    hit_count INT DEFAULT 0,
+    side ENUM('ATTACKER', 'DEFENDER'),
+    weapons JSON,                            -- JSON z podziałem na bronie
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (battle_id) REFERENCES battles(id) ON DELETE CASCADE,
+    INDEX idx_battle (battle_id),
+    UNIQUE KEY unique_player_battle (battle_id, player_id)
 );
