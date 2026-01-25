@@ -30,6 +30,9 @@ export async function backfillRoundHeroes(apiKey) {
   if (!effectiveKey) {
     throw new Error("Brak API key – podaj w ciele żądania lub ustaw ECLESIAR_API_KEY.");
   }
+  if (!process.env.ECLESIAR_API_URL) {
+    throw new Error("Brak ECLESIAR_API_URL w środowisku. Ustaw adres API na produkcji.");
+  }
 
   const [battles] = await pool.query(
     `
@@ -41,17 +44,19 @@ export async function backfillRoundHeroes(apiKey) {
   );
 
   if (!battles.length) {
-    return { battlesProcessed: 0, updatedRounds: 0, skipped: 0 };
+    return { battlesProcessed: 0, updatedRounds: 0, skipped: 0, errors: [] };
   }
 
   let updatedRounds = 0;
   let skippedBattles = 0;
+  const errors = [];
 
   for (const { battle_id: battleId } of battles) {
     try {
       const rounds = await fetchWarRounds(battleId, effectiveKey);
       if (!rounds?.length) {
         skippedBattles += 1;
+        errors.push({ battleId, reason: "Brak rund z API" });
         continue;
       }
 
@@ -77,6 +82,7 @@ export async function backfillRoundHeroes(apiKey) {
     } catch (error) {
       console.error(`Backfill hero error for battle ${battleId}:`, error.message);
       skippedBattles += 1;
+      errors.push({ battleId, reason: error.message || "Unknown error" });
     }
   }
 
@@ -84,6 +90,7 @@ export async function backfillRoundHeroes(apiKey) {
     battlesProcessed: battles.length,
     updatedRounds,
     skipped: skippedBattles,
+    errors: errors.slice(0, 10),
   };
 }
 
@@ -269,7 +276,7 @@ async function cachePlayerInfo(playerIds, apiKey) {
             nationality_id = VALUES(nationality_id),
             updated_at = CURRENT_TIMESTAMP
         `,
-          [account.id, account.username, account.avatar, account.nationality_id || null],
+          [account.id, account.username ?? account.name, account.avatar, account.nationality_id || null],
         );
       }
     } catch (error) {
