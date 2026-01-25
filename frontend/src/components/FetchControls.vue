@@ -24,6 +24,18 @@ const props = defineProps({
     type: Object,
     default: null,
   },
+  backfillingHeroes: {
+    type: Boolean,
+    required: true,
+  },
+  backfillSummary: {
+    type: Object,
+    default: null,
+  },
+  backfillError: {
+    type: String,
+    default: "",
+  },
 });
 
 const emit = defineEmits([
@@ -34,6 +46,7 @@ const emit = defineEmits([
   "fetch-battle",
   "fetch-range",
   "clear-api-key",
+  "backfill-heroes",
 ]);
 </script>
 
@@ -192,6 +205,45 @@ const emit = defineEmits([
         ></div>
       </div>
       <p v-if="!fetchProgress.isRunning" class="text-sm text-emerald-400 mt-2 font-medium">✓ Fetch completed!</p>
+    </div>
+
+    <!-- Backfill heroes -->
+    <div class="mt-6 pt-4 border-t border-slate-800">
+      <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h4 class="text-sm font-semibold text-white">Backfill battle heroes</h4>
+          <p class="text-xs text-slate-400">Uzupełnia attackers_hero/defenders_hero w istniejących rundach.</p>
+          <p v-if="backfillSummary" class="text-xs text-emerald-400 mt-1">
+            Ostatnie uruchomienie: {{ backfillSummary.updatedRounds }} rund, {{ backfillSummary.battlesProcessed }} bitew
+            (skipped: {{ backfillSummary.skipped }}).
+          </p>
+          <p v-if="backfillError" class="text-xs text-red-400 mt-1">{{ backfillError }}</p>
+        </div>
+        <button
+          type="button"
+          :disabled="backfillingHeroes"
+          class="inline-flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-lg border transition-colors"
+          :class="
+            backfillingHeroes
+              ? 'bg-slate-800 border-slate-700 text-slate-400 cursor-wait'
+              : 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/20'
+          "
+          @click="emit('backfill-heroes')"
+        >
+          <svg
+            v-if="backfillingHeroes"
+            class="w-4 h-4 mr-2 animate-spin"
+            fill="none"
+            viewBox="0 0 24 24"
+            role="img"
+            aria-hidden="true"
+          >
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+          <span>{{ backfillingHeroes ? "Uzupełniam..." : "Uzupełnij hero" }}</span>
+        </button>
+      </div>
     </div>
   </section>
 </template>

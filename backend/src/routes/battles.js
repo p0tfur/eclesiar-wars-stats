@@ -5,6 +5,7 @@ import {
   getWarSummary,
   getPlayerBattleDetails,
   deleteBattle,
+  backfillRoundHeroes,
 } from "../services/battleService.js";
 
 const router = express.Router();
@@ -29,6 +30,22 @@ router.get("/", async (req, res) => {
     res.json({ success: true, data: battles });
   } catch (error) {
     console.log("Error getting battles:", error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/battles/backfill-heroes
+ * Trigger backfill of attackers_hero/defenders_hero
+ * Body: { apiKey?: string }
+ */
+router.post("/backfill-heroes", async (req, res) => {
+  try {
+    const { apiKey } = req.body || {};
+    const result = await backfillRoundHeroes(apiKey);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.log("Error running hero backfill:", error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });

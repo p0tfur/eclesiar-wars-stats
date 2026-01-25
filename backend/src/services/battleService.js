@@ -21,6 +21,73 @@ export async function getAllBattles() {
 }
 
 /**
+ * Backfill attackers_hero/defenders_hero for existing rounds
+ * @param {string} apiKey - Optional API key, falls back to process.env.ECLESIAR_API_KEY
+ * @returns {Promise<{ battlesProcessed: number, updatedRounds: number, skipped: number }>}
+ */
+export async function backfillRoundHeroes(apiKey) {
+  const effectiveKey = apiKey || process.env.ECLESIAR_API_KEY;
+  if (!effectiveKey) {
+    throw new Error("Brak API key – podaj w ciele żądania lub ustaw ECLESIAR_API_KEY.");
+  }
+
+  const [battles] = await pool.query(
+    `
+    SELECT DISTINCT battle_id
+    FROM rounds
+    WHERE attackers_hero IS NULL OR defenders_hero IS NULL
+    ORDER BY battle_id DESC
+  `,
+  );
+
+  if (!battles.length) {
+    return { battlesProcessed: 0, updatedRounds: 0, skipped: 0 };
+  }
+
+  let updatedRounds = 0;
+  let skippedBattles = 0;
+
+  for (const { battle_id: battleId } of battles) {
+    try {
+      const rounds = await fetchWarRounds(battleId, effectiveKey);
+      if (!rounds?.length) {
+        skippedBattles += 1;
+        continue;
+      }
+
+      for (const round of rounds) {
+        const attackersHero = round.attackers_hero ?? null;
+        const defendersHero = round.defenders_hero ?? null;
+
+        if (attackersHero === null && defendersHero === null) {
+          continue;
+        }
+
+        const [result] = await pool.query(
+          `
+          UPDATE rounds
+          SET attackers_hero = ?, defenders_hero = ?, fetched_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `,
+          [attackersHero, defendersHero, round.id],
+        );
+
+        updatedRounds += result.affectedRows;
+      }
+    } catch (error) {
+      console.error(`Backfill hero error for battle ${battleId}:`, error.message);
+      skippedBattles += 1;
+    }
+  }
+
+  return {
+    battlesProcessed: battles.length,
+    updatedRounds,
+    skipped: skippedBattles,
+  };
+}
+
+/**
  * Fetch and save a battle from API
  * @param {number} battleId - Battle/War ID
  * @returns {Promise<Object>} - Saved battle data
@@ -134,8 +201,8 @@ export async function fetchAndSaveBattle(battleId, apiKey) {
         round.defenders_score,
         round.attackers_points,
         round.defenders_points,
-        round.attackers_hero ?? null,
-        round.defenders_hero ?? null,
+        round.attackers_hero,
+        round.defenders_hero,
       ],
     );
 
@@ -622,6 +689,12 @@ export async function getPlayerBattleDetails(battleIds, playerId) {
   const placeholders = battleIds.map(() => "?").join(",");
   const [rows] = await pool.query(
     `
+    WITH finishing_round AS (
+      SELECT battle_id, MIN(id) AS victory_round_id
+      FROM rounds
+      WHERE attackers_score >= 5 OR defenders_score >= 5
+      GROUP BY battle_id
+    )
     SELECT
       b.id as battle_id,
       b.attacker_name,
@@ -629,6 +702,26 @@ export async function getPlayerBattleDetails(battleIds, playerId) {
       b.region_name,
       b.end_date,
       COALESCE(SUM(h.damage), 0) as total_damage,
+      COALESCE(
+        SUM(
+          CASE
+            WHEN fr.victory_round_id IS NULL THEN h.damage
+            WHEN h.round_id <= fr.victory_round_id THEN h.damage
+            ELSE 0
+          END
+        ),
+        0
+      ) as damage_before_victory,
+      COALESCE(
+        SUM(
+          CASE
+            WHEN fr.victory_round_id IS NULL THEN 0
+            WHEN h.round_id > fr.victory_round_id THEN h.damage
+            ELSE 0
+          END
+        ),
+        0
+      ) as damage_after_victory,
       COALESCE(COUNT(h.id), 0) as hit_count,
       COALESCE(
         SUM(
@@ -642,6 +735,7 @@ export async function getPlayerBattleDetails(battleIds, playerId) {
       ) as bh_count
     FROM rounds r
     JOIN battles b ON r.battle_id = b.id
+    LEFT JOIN finishing_round fr ON fr.battle_id = r.battle_id
     LEFT JOIN hits h ON h.round_id = r.id AND h.fighter_id = ?
     WHERE r.battle_id IN (${placeholders})
     GROUP BY b.id, b.attacker_name, b.defender_name, b.region_name, b.end_date

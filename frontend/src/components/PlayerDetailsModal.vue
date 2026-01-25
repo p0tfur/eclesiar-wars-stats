@@ -85,7 +85,8 @@ function formatNumber(num) {
                   <th class="px-3 py-3 text-left">Strony</th>
                   <th class="px-3 py-3 text-left">Region</th>
                   <th class="px-3 py-3 text-left">Data</th>
-                  <th class="px-3 py-3 text-right">DMG</th>
+                  <th class="px-3 py-3 text-right">DMG przed zwycięstwem</th>
+                  <th class="px-3 py-3 text-right">DMG po zwycięstwie</th>
                   <th class="px-3 py-3 text-right">BH</th>
                   <th class="px-3 py-3 text-right">Hits</th>
                 </tr>
@@ -99,7 +100,10 @@ function formatNumber(num) {
                     {{ row.end_date ? new Date(row.end_date).toLocaleDateString("pl-PL") : "-" }}
                   </td>
                   <td class="px-3 py-2 text-right font-mono text-emerald-400">
-                    {{ formatNumber(row.total_damage) }}
+                    {{ formatNumber(row.damage_before_victory ?? 0) }}
+                  </td>
+                  <td class="px-3 py-2 text-right font-mono text-lime-300">
+                    {{ formatNumber(row.damage_after_victory ?? 0) }}
                   </td>
                   <td class="px-3 py-2 text-right font-mono text-amber-300">
                     {{ formatNumber(row.bh_count) }}
