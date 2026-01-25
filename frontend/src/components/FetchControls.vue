@@ -214,9 +214,15 @@ const emit = defineEmits([
           <h4 class="text-sm font-semibold text-white">Backfill battle heroes</h4>
           <p class="text-xs text-slate-400">Uzupełnia attackers_hero/defenders_hero w istniejących rundach.</p>
           <p v-if="backfillSummary" class="text-xs text-emerald-400 mt-1">
-            Ostatnie uruchomienie: {{ backfillSummary.updatedRounds }} rund, {{ backfillSummary.battlesProcessed }} bitew
-            (skipped: {{ backfillSummary.skipped }}).
+            Ostatnie uruchomienie: {{ backfillSummary.updatedRounds }} rund,
+            {{ backfillSummary.battlesProcessed }} bitew (skipped: {{ backfillSummary.skipped }}).
           </p>
+          <ul v-if="backfillSummary?.errors?.length" class="mt-2 space-y-1 text-xs text-amber-300/90">
+            <li class="font-semibold text-amber-200">Przykładowe błędy:</li>
+            <li v-for="errorItem in backfillSummary.errors" :key="errorItem.battleId">
+              #{{ errorItem.battleId }} — {{ errorItem.reason }}
+            </li>
+          </ul>
           <p v-if="backfillError" class="text-xs text-red-400 mt-1">{{ backfillError }}</p>
         </div>
         <button

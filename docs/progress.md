@@ -8,3 +8,4 @@
 - 2026-01-25: Dodano fallback w backendzie dla rounds bez kolumn hero (automatyczne wykrywanie schematu).
 - 2026-01-25: Uporządkowano trigger backfillu hero na froncie (handler poza computed, działa w prodzie).
 - 2026-01-25: Naprawiono błąd backfillu hero (nieprawidłowe pole username przy zapisie graczy).
+- 2026-01-25: Dodano podgląd błędów backfillu hero w UI (lista przykładowych problemów).
