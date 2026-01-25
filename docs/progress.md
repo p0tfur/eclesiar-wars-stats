@@ -15,3 +15,5 @@
 - 2026-01-25: Poprawiono wyznaczanie rundy zwycięstwa (kumulacja punktów) dla DMG przed/po zwycięstwie.
 - 2026-01-25: Ustalono kolejność rund wg end_date (i id) przy wyznaczaniu zwycięstwa dla DMG przed/po.
 - 2026-01-25: Dodano sumy kolumn (DMG/BH/Hits) w tabeli modalu szczegółów gracza.
+- 2026-01-25: Naprawiono sumy w modalu szczegółów gracza (jawne rzutowanie na liczby).
+- 2026-01-25: Usunięto backfill hero z interfejsu (FetchControls/App/api).

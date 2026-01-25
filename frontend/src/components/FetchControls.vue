@@ -24,29 +24,16 @@ const props = defineProps({
     type: Object,
     default: null,
   },
-  backfillingHeroes: {
-    type: Boolean,
-    required: true,
-  },
-  backfillSummary: {
-    type: Object,
-    default: null,
-  },
-  backfillError: {
-    type: String,
-    default: "",
-  },
 });
 
 const emit = defineEmits([
-  "update:userApiKey",
-  "update:newBattleId",
-  "update:rangeFromId",
-  "update:rangeToId",
+  "update:user-api-key",
+  "update:new-battle-id",
+  "update:range-from-id",
+  "update:range-to-id",
   "fetch-battle",
   "fetch-range",
   "clear-api-key",
-  "backfill-heroes",
 ]);
 </script>
 
@@ -84,7 +71,7 @@ const emit = defineEmits([
               type="password"
               placeholder="Key is saved ONLY in your browser."
               class="w-72 bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg pl-10 pr-3 py-2.5 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all outline-none hover:bg-slate-900"
-              @input="emit('update:userApiKey', $event.target.value)"
+              @input="emit('update:user-api-key', $event.target.value)"
             />
           </div>
           <button
@@ -123,7 +110,7 @@ const emit = defineEmits([
               placeholder="Battle ID"
               class="w-30 bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg pl-10 pr-3 py-2.5 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all outline-none hover:bg-slate-900"
               @keyup.enter="emit('fetch-battle')"
-              @input="emit('update:newBattleId', $event.target.value)"
+              @input="emit('update:new-battle-id', $event.target.value)"
             />
           </div>
           <button
@@ -164,7 +151,7 @@ const emit = defineEmits([
               placeholder="From"
               :disabled="fetchProgress?.isRunning"
               class="w-32 bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg pl-10 pr-3 py-2.5 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all outline-none hover:bg-slate-900 disabled:opacity-50"
-              @input="emit('update:rangeFromId', $event.target.value)"
+              @input="emit('update:range-from-id', $event.target.value)"
             />
           </div>
           <span class="text-slate-600">→</span>
@@ -174,7 +161,7 @@ const emit = defineEmits([
             placeholder="To"
             :disabled="fetchProgress?.isRunning"
             class="w-32 bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all outline-none hover:bg-slate-900 disabled:opacity-50"
-            @input="emit('update:rangeToId', $event.target.value)"
+            @input="emit('update:range-to-id', $event.target.value)"
           />
           <button
             :disabled="fetchProgress?.isRunning || !rangeFromId || !rangeToId"
@@ -205,54 +192,6 @@ const emit = defineEmits([
         ></div>
       </div>
       <p v-if="!fetchProgress.isRunning" class="text-sm text-emerald-400 mt-2 font-medium">✓ Fetch completed!</p>
-    </div>
-
-    <!-- Backfill heroes -->
-    <div class="mt-6 pt-4 border-t border-slate-800">
-      <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h4 class="text-sm font-semibold text-white">Backfill battle heroes</h4>
-          <p class="text-xs text-slate-400">Uzupełnia attackers_hero/defenders_hero w istniejących rundach.</p>
-          <p v-if="backfillSummary" class="text-xs text-emerald-400 mt-1">
-            Ostatnie uruchomienie: {{ backfillSummary.updatedRounds }} rund,
-            {{ backfillSummary.battlesProcessed }} bitew (skipped: {{ backfillSummary.skipped }}).
-            <span v-if="backfillSummary.handlerVersion" class="ml-2 text-emerald-300/80">
-              v: {{ backfillSummary.handlerVersion }}
-            </span>
-          </p>
-          <ul v-if="backfillSummary?.errors?.length" class="mt-2 space-y-1 text-xs text-amber-300/90">
-            <li class="font-semibold text-amber-200">Przykładowe błędy:</li>
-            <li v-for="errorItem in backfillSummary.errors" :key="errorItem.battleId">
-              #{{ errorItem.battleId }} — {{ errorItem.reason }}
-            </li>
-          </ul>
-          <p v-if="backfillError" class="text-xs text-red-400 mt-1">{{ backfillError }}</p>
-        </div>
-        <button
-          type="button"
-          :disabled="backfillingHeroes"
-          class="inline-flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-lg border transition-colors"
-          :class="
-            backfillingHeroes
-              ? 'bg-slate-800 border-slate-700 text-slate-400 cursor-wait'
-              : 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/20'
-          "
-          @click="emit('backfill-heroes')"
-        >
-          <svg
-            v-if="backfillingHeroes"
-            class="w-4 h-4 mr-2 animate-spin"
-            fill="none"
-            viewBox="0 0 24 24"
-            role="img"
-            aria-hidden="true"
-          >
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-          </svg>
-          <span>{{ backfillingHeroes ? "Uzupełniam..." : "Uzupełnij hero" }}</span>
-        </button>
-      </div>
     </div>
   </section>
 </template>

@@ -69,16 +69,6 @@ export async function getPlayerBattleDetails(battleIds, playerId) {
 }
 
 /**
- * Trigger server-side backfill of attackers_hero/defenders_hero columns
- * @param {string} apiKey - Optional API key to override server default
- * @returns {Promise<Object>} - Result payload
- */
-export async function backfillHeroColumns(apiKey) {
-  const response = await api.post("/battles/backfill-heroes", { apiKey });
-  return response.data;
-}
-
-/**
  * Delete a battle from database
  * @param {number} battleId - Battle ID to delete
  * @returns {Promise<Object>} - Response

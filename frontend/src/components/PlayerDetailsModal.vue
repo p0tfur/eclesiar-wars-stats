@@ -30,13 +30,17 @@ const playerName = computed(() => props.player?.player_name || `Player #${props.
 const profileUrl = computed(() =>
   props.player?.fighter_id ? `https://eclesiar.com/user/${props.player.fighter_id}` : "#",
 );
+function toNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
 const summaryTotals = computed(() =>
   props.details.reduce(
     (totals, row) => {
-      totals.damageBefore += row.damage_before_victory ?? 0;
-      totals.damageAfter += row.damage_after_victory ?? 0;
-      totals.bhCount += row.bh_count ?? 0;
-      totals.hitCount += row.hit_count ?? 0;
+      totals.damageBefore += toNumber(row.damage_before_victory);
+      totals.damageAfter += toNumber(row.damage_after_victory);
+      totals.bhCount += toNumber(row.bh_count);
+      totals.hitCount += toNumber(row.hit_count);
       return totals;
     },
     { damageBefore: 0, damageAfter: 0, bhCount: 0, hitCount: 0 },

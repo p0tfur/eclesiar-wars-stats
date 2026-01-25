@@ -8,7 +8,6 @@ import {
   getWarSummary,
   getPlayerBattleDetails,
   deleteBattle,
-  backfillHeroColumns,
 } from "./api.js";
 import FetchControls from "./components/FetchControls.vue";
 import FiltersSection from "./components/FiltersSection.vue";
@@ -33,9 +32,6 @@ const rangeFromId = ref("");
 const rangeToId = ref("");
 const fetchProgress = ref(null);
 let progressInterval = null;
-const backfillingHeroes = ref(false);
-const backfillSummary = ref(null);
-const backfillError = ref("");
 
 // Country filter state (include)
 const countryFilters = ref([]);
@@ -88,26 +84,6 @@ const filteredExcludeCountryOptions = computed(() => {
   const query = excludeCountrySearch.value.toLowerCase();
   return base.filter((country) => country.toLowerCase().includes(query));
 });
-
-async function triggerHeroBackfill() {
-  if (backfillingHeroes.value) {
-    return;
-  }
-  backfillingHeroes.value = true;
-  backfillError.value = "";
-  try {
-    const response = await backfillHeroColumns(userApiKey.value || undefined);
-    if (response.success) {
-      backfillSummary.value = response.data;
-    } else {
-      backfillError.value = response.error || "Nie udało się uruchomić backfillu.";
-    }
-  } catch (error) {
-    backfillError.value = error?.response?.data?.error || error.message || "Backfill failed.";
-  } finally {
-    backfillingHeroes.value = false;
-  }
-}
 
 // Check if any filter is active
 const hasActiveFilters = computed(() => {
@@ -553,9 +529,6 @@ onUnmounted(() => {
         :range-to-id="rangeToId"
         :fetching-battle="fetchingBattle"
         :fetch-progress="fetchProgress"
-        :backfilling-heroes="backfillingHeroes"
-        :backfill-summary="backfillSummary"
-        :backfill-error="backfillError"
         @update:user-api-key="userApiKey = $event"
         @update:new-battle-id="newBattleId = $event"
         @update:range-from-id="rangeFromId = $event"
@@ -563,7 +536,6 @@ onUnmounted(() => {
         @fetch-battle="handleFetchBattle"
         @fetch-range="handleFetchRange"
         @clear-api-key="userApiKey = ''"
-        @backfill-heroes="triggerHeroBackfill"
       />
 
       <FiltersSection
