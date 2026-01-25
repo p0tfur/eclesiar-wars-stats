@@ -83,7 +83,10 @@ export async function backfillRoundHeroes(apiKey) {
     } catch (error) {
       console.error(`Backfill hero error for battle ${battleId}:`, error.message);
       skippedBattles += 1;
-      errors.push({ battleId, reason: error.message || "Unknown error" });
+      const sqlMessage = error?.sqlMessage ? `SQL: ${error.sqlMessage}` : null;
+      const sql = error?.sql ? `Query: ${error.sql}` : null;
+      const reason = [error?.message || "Unknown error", sqlMessage, sql].filter(Boolean).join(" | ");
+      errors.push({ battleId, reason });
     }
   }
 
