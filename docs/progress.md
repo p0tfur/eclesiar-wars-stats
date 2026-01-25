@@ -5,3 +5,5 @@
 - 2026-01-25: Dodano krok GHA do triggerowania deploy hooka w Coolify (sekret COOLIFY_DEPLOY_HOOK_URL).
 - 2026-01-25: Zaktualizowano GHA: deploy przez secrets COOLIFY_WEBHOOK + COOLIFY_TOKEN.
 - 2026-01-25: Naprawiono cache dependency paths w GHA (glob na package-lock.json).
+- 2026-01-25: Dodano fallback w backendzie dla rounds bez kolumn hero (automatyczne wykrywanie schematu).
+- 2026-01-25: Uporządkowano trigger backfillu hero na froncie (handler poza computed, działa w prodzie).

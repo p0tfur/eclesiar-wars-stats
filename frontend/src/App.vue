@@ -76,26 +76,6 @@ const filteredCountryOptions = computed(() => {
   if (!countrySearch.value.trim()) {
     return base;
   }
-
-  async function triggerHeroBackfill() {
-    if (backfillingHeroes.value) {
-      return;
-    }
-    backfillingHeroes.value = true;
-    backfillError.value = "";
-    try {
-      const response = await backfillHeroColumns(userApiKey.value || undefined);
-      if (response.success) {
-        backfillSummary.value = response.data;
-      } else {
-        backfillError.value = response.error || "Nie udało się uruchomić backfillu.";
-      }
-    } catch (error) {
-      backfillError.value = error?.response?.data?.error || error.message || "Backfill failed.";
-    } finally {
-      backfillingHeroes.value = false;
-    }
-  }
   const query = countrySearch.value.toLowerCase();
   return base.filter((country) => country.toLowerCase().includes(query));
 });
@@ -108,6 +88,26 @@ const filteredExcludeCountryOptions = computed(() => {
   const query = excludeCountrySearch.value.toLowerCase();
   return base.filter((country) => country.toLowerCase().includes(query));
 });
+
+async function triggerHeroBackfill() {
+  if (backfillingHeroes.value) {
+    return;
+  }
+  backfillingHeroes.value = true;
+  backfillError.value = "";
+  try {
+    const response = await backfillHeroColumns(userApiKey.value || undefined);
+    if (response.success) {
+      backfillSummary.value = response.data;
+    } else {
+      backfillError.value = response.error || "Nie udało się uruchomić backfillu.";
+    }
+  } catch (error) {
+    backfillError.value = error?.response?.data?.error || error.message || "Backfill failed.";
+  } finally {
+    backfillingHeroes.value = false;
+  }
+}
 
 // Check if any filter is active
 const hasActiveFilters = computed(() => {
