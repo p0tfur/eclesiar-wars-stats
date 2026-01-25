@@ -1,0 +1,47 @@
+name: Build Wars
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: |
+            wars/backend/package-lock.json
+            wars/frontend/package-lock.json
+
+      - name: Install backend deps
+        working-directory: wars/backend
+        run: npm ci --omit=dev
+
+      - name: Install frontend deps
+        working-directory: wars/frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: wars/frontend
+        run: npm run build
+
+      - name: Trigger Coolify deployment
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        run: |
+          if [ -z "${{ secrets.COOLIFY_WEBHOOK }}" ] || [ -z "${{ secrets.COOLIFY_TOKEN_ECLEWARS }}" ]; then
+            echo "Missing COOLIFY_WEBHOOK or COOLIFY_TOKEN_ECLEWARS secret" >&2
+            exit 1
+          fi
+          curl --fail --show-error --silent --request GET "${{ secrets.COOLIFY_WEBHOOK }}" \
+            --header "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN_ECLEWARS }}"

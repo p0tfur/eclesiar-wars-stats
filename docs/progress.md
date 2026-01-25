@@ -1,2 +1,6 @@
 - 2026-01-25: Dodano zapisywanie battle hero (attackers_hero/defenders_hero) do rund, migrację DB oraz modal z detalami gracza (DMG/BH/Hits per bitwa) w War Summary.
 - 2026-01-25: Dodano scroll w modalu szczegółów gracza, żeby nie wychodził poza ekran.
+- 2026-01-25: Dodano workflow GitHub Actions do builda frontendu w projekcie wars.
+- 2026-01-25: Dodano Dockerfile w root repo + .dockerignore pod Coolify (jeden serwis: backend + frontend).
+- 2026-01-25: Dodano krok GHA do triggerowania deploy hooka w Coolify (sekret COOLIFY_DEPLOY_HOOK_URL).
+- 2026-01-25: Zaktualizowano GHA: deploy przez secrets COOLIFY_WEBHOOK + COOLIFY_TOKEN.
