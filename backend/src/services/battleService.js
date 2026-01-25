@@ -26,6 +26,7 @@ export async function getAllBattles() {
  * @returns {Promise<{ battlesProcessed: number, updatedRounds: number, skipped: number }>}
  */
 export async function backfillRoundHeroes(apiKey) {
+  const handlerVersion = "2026-01-25-username-fix";
   const effectiveKey = apiKey || process.env.ECLESIAR_API_KEY;
   if (!effectiveKey) {
     throw new Error("Brak API key – podaj w ciele żądania lub ustaw ECLESIAR_API_KEY.");
@@ -44,7 +45,7 @@ export async function backfillRoundHeroes(apiKey) {
   );
 
   if (!battles.length) {
-    return { battlesProcessed: 0, updatedRounds: 0, skipped: 0, errors: [] };
+    return { battlesProcessed: 0, updatedRounds: 0, skipped: 0, errors: [], handlerVersion };
   }
 
   let updatedRounds = 0;
@@ -91,6 +92,7 @@ export async function backfillRoundHeroes(apiKey) {
     updatedRounds,
     skipped: skippedBattles,
     errors: errors.slice(0, 10),
+    handlerVersion,
   };
 }
 

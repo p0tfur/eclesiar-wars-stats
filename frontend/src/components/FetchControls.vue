@@ -216,6 +216,9 @@ const emit = defineEmits([
           <p v-if="backfillSummary" class="text-xs text-emerald-400 mt-1">
             Ostatnie uruchomienie: {{ backfillSummary.updatedRounds }} rund,
             {{ backfillSummary.battlesProcessed }} bitew (skipped: {{ backfillSummary.skipped }}).
+            <span v-if="backfillSummary.handlerVersion" class="ml-2 text-emerald-300/80">
+              v: {{ backfillSummary.handlerVersion }}
+            </span>
           </p>
           <ul v-if="backfillSummary?.errors?.length" class="mt-2 space-y-1 text-xs text-amber-300/90">
             <li class="font-semibold text-amber-200">Przykładowe błędy:</li>
