@@ -722,6 +722,12 @@ export async function getPlayerBattleDetails(battleIds, playerId) {
       FROM rounds
       WHERE attackers_score >= 5 OR defenders_score >= 5
       GROUP BY battle_id
+    ),
+    hits_by_round AS (
+      SELECT round_id, SUM(damage) AS total_damage, COUNT(*) AS hit_count
+      FROM hits
+      WHERE fighter_id = ?
+      GROUP BY round_id
     )
     SELECT
       b.id as battle_id,
@@ -729,12 +735,12 @@ export async function getPlayerBattleDetails(battleIds, playerId) {
       b.defender_name,
       b.region_name,
       b.end_date,
-      COALESCE(SUM(h.damage), 0) as total_damage,
+      COALESCE(SUM(hbr.total_damage), 0) as total_damage,
       COALESCE(
         SUM(
           CASE
-            WHEN fr.victory_round_id IS NULL THEN h.damage
-            WHEN h.round_id <= fr.victory_round_id THEN h.damage
+            WHEN fr.victory_round_id IS NULL THEN hbr.total_damage
+            WHEN r.id <= fr.victory_round_id THEN hbr.total_damage
             ELSE 0
           END
         ),
@@ -744,13 +750,13 @@ export async function getPlayerBattleDetails(battleIds, playerId) {
         SUM(
           CASE
             WHEN fr.victory_round_id IS NULL THEN 0
-            WHEN h.round_id > fr.victory_round_id THEN h.damage
+            WHEN r.id > fr.victory_round_id THEN hbr.total_damage
             ELSE 0
           END
         ),
         0
       ) as damage_after_victory,
-      COALESCE(COUNT(h.id), 0) as hit_count,
+      COALESCE(SUM(hbr.hit_count), 0) as hit_count,
       COALESCE(
         SUM(
           CASE
@@ -764,7 +770,7 @@ export async function getPlayerBattleDetails(battleIds, playerId) {
     FROM rounds r
     JOIN battles b ON r.battle_id = b.id
     LEFT JOIN finishing_round fr ON fr.battle_id = r.battle_id
-    LEFT JOIN hits h ON h.round_id = r.id AND h.fighter_id = ?
+    LEFT JOIN hits_by_round hbr ON hbr.round_id = r.id
     WHERE r.battle_id IN (${placeholders})
     GROUP BY b.id, b.attacker_name, b.defender_name, b.region_name, b.end_date
     HAVING total_damage > 0 OR bh_count > 0
