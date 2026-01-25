@@ -721,14 +721,15 @@ export async function getPlayerBattleDetails(battleIds, playerId) {
       SELECT
         id,
         battle_id,
+        ROW_NUMBER() OVER (PARTITION BY battle_id ORDER BY end_date, id) AS round_order,
         SUM(CASE WHEN attackers_points > defenders_points THEN 1 ELSE 0 END)
-          OVER (PARTITION BY battle_id ORDER BY id) AS attackers_wins,
+          OVER (PARTITION BY battle_id ORDER BY end_date, id) AS attackers_wins,
         SUM(CASE WHEN defenders_points > attackers_points THEN 1 ELSE 0 END)
-          OVER (PARTITION BY battle_id ORDER BY id) AS defenders_wins
+          OVER (PARTITION BY battle_id ORDER BY end_date, id) AS defenders_wins
       FROM rounds
     ),
     finishing_round AS (
-      SELECT battle_id, MIN(id) AS victory_round_id
+      SELECT battle_id, MIN(round_order) AS victory_round_order
       FROM round_progress
       WHERE attackers_wins >= 5 OR defenders_wins >= 5
       GROUP BY battle_id
@@ -749,8 +750,8 @@ export async function getPlayerBattleDetails(battleIds, playerId) {
       COALESCE(
         SUM(
           CASE
-            WHEN fr.victory_round_id IS NULL THEN hbr.total_damage
-            WHEN r.id <= fr.victory_round_id THEN hbr.total_damage
+            WHEN fr.victory_round_order IS NULL THEN hbr.total_damage
+            WHEN rp.round_order <= fr.victory_round_order THEN hbr.total_damage
             ELSE 0
           END
         ),
@@ -759,8 +760,8 @@ export async function getPlayerBattleDetails(battleIds, playerId) {
       COALESCE(
         SUM(
           CASE
-            WHEN fr.victory_round_id IS NULL THEN 0
-            WHEN r.id > fr.victory_round_id THEN hbr.total_damage
+            WHEN fr.victory_round_order IS NULL THEN 0
+            WHEN rp.round_order > fr.victory_round_order THEN hbr.total_damage
             ELSE 0
           END
         ),
@@ -778,6 +779,7 @@ export async function getPlayerBattleDetails(battleIds, playerId) {
         0
       ) as bh_count
     FROM rounds r
+    JOIN round_progress rp ON rp.id = r.id
     JOIN battles b ON r.battle_id = b.id
     LEFT JOIN finishing_round fr ON fr.battle_id = r.battle_id
     LEFT JOIN hits_by_round hbr ON hbr.round_id = r.id

@@ -13,3 +13,5 @@
 - 2026-01-25: Normalizacja hero do ID przy zapisie rund i backfillu (uniknięcie błędów username w UPDATE rounds).
 - 2026-01-25: Poprawiono zliczanie BH (agregacja hitów per runda, bez duplikacji z joinami).
 - 2026-01-25: Poprawiono wyznaczanie rundy zwycięstwa (kumulacja punktów) dla DMG przed/po zwycięstwie.
+- 2026-01-25: Ustalono kolejność rund wg end_date (i id) przy wyznaczaniu zwycięstwa dla DMG przed/po.
+- 2026-01-25: Dodano sumy kolumn (DMG/BH/Hits) w tabeli modalu szczegółów gracza.

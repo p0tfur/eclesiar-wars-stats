@@ -30,6 +30,18 @@ const playerName = computed(() => props.player?.player_name || `Player #${props.
 const profileUrl = computed(() =>
   props.player?.fighter_id ? `https://eclesiar.com/user/${props.player.fighter_id}` : "#",
 );
+const summaryTotals = computed(() =>
+  props.details.reduce(
+    (totals, row) => {
+      totals.damageBefore += row.damage_before_victory ?? 0;
+      totals.damageAfter += row.damage_after_victory ?? 0;
+      totals.bhCount += row.bh_count ?? 0;
+      totals.hitCount += row.hit_count ?? 0;
+      return totals;
+    },
+    { damageBefore: 0, damageAfter: 0, bhCount: 0, hitCount: 0 },
+  ),
+);
 
 function formatNumber(num) {
   return num?.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") || "0";
@@ -89,6 +101,22 @@ function formatNumber(num) {
                   <th class="px-3 py-3 text-right">DMG po zwycięstwie</th>
                   <th class="px-3 py-3 text-right">BH</th>
                   <th class="px-3 py-3 text-right">Hits</th>
+                </tr>
+                <tr class="bg-slate-900 text-slate-200 normal-case">
+                  <th class="px-2 py-2 text-left">Suma</th>
+                  <th class="px-3 py-2 text-left" colspan="3"></th>
+                  <th class="px-3 py-2 text-right font-mono text-emerald-300">
+                    {{ formatNumber(summaryTotals.damageBefore) }}
+                  </th>
+                  <th class="px-3 py-2 text-right font-mono text-lime-300">
+                    {{ formatNumber(summaryTotals.damageAfter) }}
+                  </th>
+                  <th class="px-3 py-2 text-right font-mono text-amber-300">
+                    {{ formatNumber(summaryTotals.bhCount) }}
+                  </th>
+                  <th class="px-3 py-2 text-right font-mono text-slate-300">
+                    {{ formatNumber(summaryTotals.hitCount) }}
+                  </th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-800/50">
