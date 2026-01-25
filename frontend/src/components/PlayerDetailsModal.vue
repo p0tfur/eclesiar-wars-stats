@@ -38,10 +38,10 @@ function formatNumber(num) {
 
 <template>
   <Teleport to="body">
-    <div v-if="isOpen" class="fixed inset-0 z-50 flex items-center justify-center">
+    <div v-if="isOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="emit('close')"></div>
       <div
-        class="relative w-full max-w-3xl mx-4 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden"
+        class="relative w-full max-w-3xl bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
         role="dialog"
         aria-modal="true"
       >
@@ -55,7 +55,7 @@ function formatNumber(num) {
           </button>
         </div>
 
-        <div class="px-6 py-4 space-y-4">
+        <div class="px-6 py-4 space-y-4 overflow-y-auto min-h-0">
           <div class="flex flex-wrap items-center gap-3">
             <a
               v-if="player?.fighter_id"
