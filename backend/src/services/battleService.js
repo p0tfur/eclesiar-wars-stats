@@ -2,6 +2,22 @@ import pool from "../config/database.js";
 import { fetchWars, fetchWarRounds, fetchRoundHits, fetchAccount } from "./eclesiarApi.js";
 import { getItemName } from "../config/itemMapping.js";
 
+function extractHeroId(hero) {
+  if (!hero) {
+    return null;
+  }
+
+  if (typeof hero === "number") {
+    return hero;
+  }
+
+  if (typeof hero === "object" && hero.id) {
+    return hero.id;
+  }
+
+  return null;
+}
+
 /**
  * Get all battles from database
  * @returns {Promise<Array>} - List of battles
@@ -62,8 +78,8 @@ export async function backfillRoundHeroes(apiKey) {
       }
 
       for (const round of rounds) {
-        const attackersHero = round.attackers_hero ?? null;
-        const defendersHero = round.defenders_hero ?? null;
+        const attackersHero = extractHeroId(round.attackers_hero);
+        const defendersHero = extractHeroId(round.defenders_hero);
 
         if (attackersHero === null && defendersHero === null) {
           continue;
@@ -213,8 +229,8 @@ export async function fetchAndSaveBattle(battleId, apiKey) {
         round.defenders_score,
         round.attackers_points,
         round.defenders_points,
-        round.attackers_hero,
-        round.defenders_hero,
+        extractHeroId(round.attackers_hero),
+        extractHeroId(round.defenders_hero),
       ],
     );
 

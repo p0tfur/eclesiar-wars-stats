@@ -10,3 +10,4 @@
 - 2026-01-25: Naprawiono błąd backfillu hero (nieprawidłowe pole username przy zapisie graczy).
 - 2026-01-25: Dodano podgląd błędów backfillu hero w UI (lista przykładowych problemów).
 - 2026-01-25: Rozszerzono diagnostykę backfillu hero o sqlMessage/sql w reason, by wskazać dokładne zapytanie.
+- 2026-01-25: Normalizacja hero do ID przy zapisie rund i backfillu (uniknięcie błędów username w UPDATE rounds).
