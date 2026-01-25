@@ -12,3 +12,4 @@
 - 2026-01-25: Rozszerzono diagnostykę backfillu hero o sqlMessage/sql w reason, by wskazać dokładne zapytanie.
 - 2026-01-25: Normalizacja hero do ID przy zapisie rund i backfillu (uniknięcie błędów username w UPDATE rounds).
 - 2026-01-25: Poprawiono zliczanie BH (agregacja hitów per runda, bez duplikacji z joinami).
+- 2026-01-25: Poprawiono wyznaczanie rundy zwycięstwa (kumulacja punktów) dla DMG przed/po zwycięstwie.

@@ -717,10 +717,20 @@ export async function getPlayerBattleDetails(battleIds, playerId) {
   const placeholders = battleIds.map(() => "?").join(",");
   const [rows] = await pool.query(
     `
-    WITH finishing_round AS (
-      SELECT battle_id, MIN(id) AS victory_round_id
+    WITH round_progress AS (
+      SELECT
+        id,
+        battle_id,
+        SUM(CASE WHEN attackers_points > defenders_points THEN 1 ELSE 0 END)
+          OVER (PARTITION BY battle_id ORDER BY id) AS attackers_wins,
+        SUM(CASE WHEN defenders_points > attackers_points THEN 1 ELSE 0 END)
+          OVER (PARTITION BY battle_id ORDER BY id) AS defenders_wins
       FROM rounds
-      WHERE attackers_score >= 5 OR defenders_score >= 5
+    ),
+    finishing_round AS (
+      SELECT battle_id, MIN(id) AS victory_round_id
+      FROM round_progress
+      WHERE attackers_wins >= 5 OR defenders_wins >= 5
       GROUP BY battle_id
     ),
     hits_by_round AS (
