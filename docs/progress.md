@@ -4,3 +4,4 @@
 - 2026-01-25: Dodano Dockerfile w root repo + .dockerignore pod Coolify (jeden serwis: backend + frontend).
 - 2026-01-25: Dodano krok GHA do triggerowania deploy hooka w Coolify (sekret COOLIFY_DEPLOY_HOOK_URL).
 - 2026-01-25: Zaktualizowano GHA: deploy przez secrets COOLIFY_WEBHOOK + COOLIFY_TOKEN.
+- 2026-01-25: Naprawiono cache dependency paths w GHA (glob na package-lock.json).

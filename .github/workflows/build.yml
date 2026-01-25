@@ -21,8 +21,7 @@ jobs:
           node-version: "20"
           cache: "npm"
           cache-dependency-path: |
-            wars/backend/package-lock.json
-            wars/frontend/package-lock.json
+            **/package-lock.json
 
       - name: Install backend deps
         working-directory: wars/backend
