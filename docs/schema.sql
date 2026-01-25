@@ -29,6 +29,8 @@ CREATE TABLE rounds (
     defenders_score INT DEFAULT 0,
     attackers_points INT DEFAULT 0,
     defenders_points INT DEFAULT 0,
+    attackers_hero INT DEFAULT NULL,
+    defenders_hero INT DEFAULT NULL,
     fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (battle_id) REFERENCES battles(id) ON DELETE CASCADE
 );

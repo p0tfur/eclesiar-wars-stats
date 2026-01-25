@@ -1,12 +1,24 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
-import { getBattles, fetchBattle, fetchBattleRange, getFetchProgress, getWarSummary, deleteBattle } from "./api.js";
+import { ref, computed, onMounted, onUnmounted, watch } from "vue";
+import {
+  getBattles,
+  fetchBattle,
+  fetchBattleRange,
+  getFetchProgress,
+  getWarSummary,
+  getPlayerBattleDetails,
+  deleteBattle,
+} from "./api.js";
+import FetchControls from "./components/FetchControls.vue";
+import FiltersSection from "./components/FiltersSection.vue";
+import BattlesTable from "./components/BattlesTable.vue";
+import SummaryPanel from "./components/SummaryPanel.vue";
+import PlayerDetailsModal from "./components/PlayerDetailsModal.vue";
 
 // State
 const battles = ref([]);
 const selectedBattleIds = ref([]);
 const summary = ref([]);
-const expandedPlayers = ref(new Set());
 const loading = ref(false);
 const fetchingBattle = ref(false);
 const loadingSummary = ref(false);
@@ -26,67 +38,24 @@ const countryFilters = ref([]);
 const excludedFilterBattleIds = ref([]);
 const countrySearch = ref("");
 const includeDropdownOpen = ref(false);
-const includeTriggerRef = ref(null);
-const includeDropdownPosition = ref({ top: 0, left: 0, width: 0 });
 
 // Country exclude filter state
 const excludeCountryFilters = ref([]);
 const excludeCountrySearch = ref("");
 const excludeDropdownOpen = ref(false);
-const excludeTriggerRef = ref(null);
-const excludeDropdownPosition = ref({ top: 0, left: 0, width: 0 });
 
 // Date range filter state
 const dateFrom = ref("");
 const dateTo = ref("");
 
-// Weapon order for display (most powerful first)
-const WEAPON_ORDER = ["WQ5", "WQ4", "WQ3", "WQ2", "WQ1", "AQ5", "AQ4", "AQ3", "AQ2", "AQ1", "Hand"];
-
-// Summary table sorting state
-const summarySortKey = ref("total_damage");
-const summarySortAsc = ref(false);
-
 // Refresh state for individual battles
 const refreshingBattleId = ref(null);
-
-// Summary country filter state
-const summaryCountryFilter = ref([]);
-const summaryCountrySearch = ref("");
-const summaryCountryDropdownOpen = ref(false);
-const summaryCountryTriggerRef = ref(null);
-const summaryCountryDropdownPosition = ref({ top: 0, left: 0, width: 0 });
-
-const hasWeaponBreakdown = (player) => !!player?.weapons && Object.keys(player.weapons).length > 0;
-
-function isWeaponExpanded(fighterId) {
-  if (!fighterId) {
-    return false;
-  }
-  return expandedPlayers.value.has(fighterId);
-}
-
-function toggleWeaponBreakdown(fighterId) {
-  if (!fighterId) {
-    return;
-  }
-  const next = new Set(expandedPlayers.value);
-  if (next.has(fighterId)) {
-    next.delete(fighterId);
-  } else {
-    next.add(fighterId);
-  }
-  expandedPlayers.value = next;
-}
-
-function toggleAllWeaponBreakdowns(targetState) {
-  if (targetState) {
-    const next = new Set(playersWithWeaponBreakdown.value.map((player) => player.fighter_id));
-    expandedPlayers.value = next;
-  } else {
-    expandedPlayers.value = new Set();
-  }
-}
+// Player details modal state
+const playerDetailsOpen = ref(false);
+const selectedPlayer = ref(null);
+const playerDetails = ref([]);
+const playerDetailsLoading = ref(false);
+const playerDetailsError = ref("");
 
 // Computed
 const availableCountries = computed(() => {
@@ -116,54 +85,9 @@ const filteredExcludeCountryOptions = computed(() => {
   return base.filter((country) => country.toLowerCase().includes(query));
 });
 
-const includeDropdownStyle = computed(() => ({
-  top: `${includeDropdownPosition.value.top}px`,
-  left: `${includeDropdownPosition.value.left}px`,
-  width: `${includeDropdownPosition.value.width}px`,
-}));
-
-const excludeDropdownStyle = computed(() => ({
-  top: `${excludeDropdownPosition.value.top}px`,
-  left: `${excludeDropdownPosition.value.left}px`,
-  width: `${excludeDropdownPosition.value.width}px`,
-}));
-
 // Check if any filter is active
 const hasActiveFilters = computed(() => {
   return countryFilters.value.length > 0 || excludeCountryFilters.value.length > 0 || dateFrom.value || dateTo.value;
-});
-
-// Summary country filter computed properties
-const availableSummaryCountries = computed(() => {
-  const countries = new Set();
-  summary.value.forEach((player) => {
-    if (player.country_name) countries.add(player.country_name);
-  });
-  return Array.from(countries).sort();
-});
-
-const filteredSummaryCountryOptions = computed(() => {
-  if (!summaryCountrySearch.value.trim()) {
-    return availableSummaryCountries.value;
-  }
-  const query = summaryCountrySearch.value.toLowerCase();
-  return availableSummaryCountries.value.filter((c) => c.toLowerCase().includes(query));
-});
-
-const summaryCountryDropdownStyle = computed(() => ({
-  top: `${summaryCountryDropdownPosition.value.top}px`,
-  left: `${summaryCountryDropdownPosition.value.left}px`,
-  width: `${summaryCountryDropdownPosition.value.width}px`,
-}));
-
-const playersWithWeaponBreakdown = computed(() => summary.value.filter((player) => hasWeaponBreakdown(player)));
-
-const allWeaponBreakdownsExpanded = computed(() => {
-  const players = playersWithWeaponBreakdown.value;
-  if (!players.length) {
-    return false;
-  }
-  return players.every((player) => expandedPlayers.value.has(player.fighter_id));
 });
 
 const filteredBattleIds = computed(() => {
@@ -173,7 +97,7 @@ const filteredBattleIds = computed(() => {
   if (countryFilters.value.length) {
     result = result.filter(
       (battle) =>
-        countryFilters.value.includes(battle.attacker_name) || countryFilters.value.includes(battle.defender_name)
+        countryFilters.value.includes(battle.attacker_name) || countryFilters.value.includes(battle.defender_name),
     );
   }
 
@@ -182,7 +106,7 @@ const filteredBattleIds = computed(() => {
     result = result.filter(
       (battle) =>
         !excludeCountryFilters.value.includes(battle.attacker_name) &&
-        !excludeCountryFilters.value.includes(battle.defender_name)
+        !excludeCountryFilters.value.includes(battle.defender_name),
     );
   }
 
@@ -227,7 +151,7 @@ const sortedDisplayedBattles = computed(() => {
 });
 
 const filterSelectedBattleIds = computed(() =>
-  filteredBattleIds.value.filter((id) => !excludedFilterBattleIds.value.includes(id))
+  filteredBattleIds.value.filter((id) => !excludedFilterBattleIds.value.includes(id)),
 );
 
 const combinedBattleIds = computed(() => {
@@ -238,65 +162,27 @@ const combinedBattleIds = computed(() => {
 
 const hasSelectedBattles = computed(() => combinedBattleIds.value.length > 0);
 
-// Sorted summary based on current sort key (with country filter applied)
-const sortedSummary = computed(() => {
-  let filtered = [...summary.value];
-  
-  // Apply country filter
-  if (summaryCountryFilter.value.length > 0) {
-    filtered = filtered.filter((player) => summaryCountryFilter.value.includes(player.country_name));
-  }
-  
-  filtered.sort((a, b) => {
-    let aVal = a[summarySortKey.value];
-    let bVal = b[summarySortKey.value];
-    
-    // Handle string comparison
-    if (typeof aVal === "string" && typeof bVal === "string") {
-      return summarySortAsc.value 
-        ? aVal.localeCompare(bVal) 
-        : bVal.localeCompare(aVal);
-    }
-    
-    // Handle numeric comparison
-    aVal = Number(aVal) || 0;
-    bVal = Number(bVal) || 0;
-    return summarySortAsc.value ? aVal - bVal : bVal - aVal;
-  });
-  return filtered;
-});
-
-// Function to toggle sort on a column
-function toggleSummarySort(key) {
-  if (summarySortKey.value === key) {
-    summarySortAsc.value = !summarySortAsc.value;
-  } else {
-    summarySortKey.value = key;
-    summarySortAsc.value = key === "player_name"; // Default asc for text, desc for numbers
-  }
-}
-
 // Check if battle is incomplete (neither side has won 5 rounds yet)
 function isBattleIncomplete(battle) {
   // Battle is complete when one side reaches 5 wins
   const attackerWins = battle.attackers_score || 0;
   const defenderWins = battle.defenders_score || 0;
-  
+
   // If neither side has 5 wins, battle is still in progress
   if (attackerWins < 5 && defenderWins < 5) {
     return true;
   }
-  
+
   return false;
 }
 
 // Refresh a single battle
 async function refreshBattle(battleId) {
   if (refreshingBattleId.value) return;
-  
+
   refreshingBattleId.value = battleId;
   error.value = "";
-  
+
   try {
     console.log(`Refreshing battle ${battleId}...`);
     await fetchBattle(battleId, userApiKey.value || undefined);
@@ -313,11 +199,6 @@ async function refreshBattle(battleId) {
 watch(filteredBattleIds, (newIds) => {
   excludedFilterBattleIds.value = excludedFilterBattleIds.value.filter((id) => newIds.includes(id));
 });
-
-// Format large numbers with spaces
-function formatNumber(num) {
-  return num?.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") || "0";
-}
 
 // Load battles from database
 async function loadBattles() {
@@ -480,6 +361,35 @@ async function generateSummary() {
   }
 }
 
+async function openPlayerDetails(player) {
+  if (!player?.fighter_id) {
+    return;
+  }
+
+  selectedPlayer.value = player;
+  playerDetailsOpen.value = true;
+  playerDetailsLoading.value = true;
+  playerDetailsError.value = "";
+  playerDetails.value = [];
+
+  try {
+    const response = await getPlayerBattleDetails(combinedBattleIds.value, player.fighter_id);
+    if (response.success) {
+      playerDetails.value = response.data;
+    } else {
+      playerDetailsError.value = response.error || "Nie udało się pobrać szczegółów gracza.";
+    }
+  } catch (err) {
+    playerDetailsError.value = "Nie udało się pobrać szczegółów gracza: " + err.message;
+  } finally {
+    playerDetailsLoading.value = false;
+  }
+}
+
+function closePlayerDetails() {
+  playerDetailsOpen.value = false;
+}
+
 function clearCountryFilters() {
   countryFilters.value = [];
   excludedFilterBattleIds.value = [];
@@ -536,148 +446,17 @@ function filteredSummaryReset() {
   }
 }
 
-// Summary country filter functions
-function toggleSummaryCountryOption(option) {
-  if (summaryCountryFilter.value.includes(option)) {
-    summaryCountryFilter.value = summaryCountryFilter.value.filter((c) => c !== option);
-  } else {
-    summaryCountryFilter.value = [...summaryCountryFilter.value, option];
-  }
-}
-
-function removeSummaryCountryChip(option, event) {
-  event?.stopPropagation();
-  summaryCountryFilter.value = summaryCountryFilter.value.filter((c) => c !== option);
-}
-
-function clearSummaryCountryFilter() {
-  summaryCountryFilter.value = [];
-  summaryCountrySearch.value = "";
-}
-
-function setDropdownPosition(triggerRef, positionRef) {
-  const el = triggerRef.value;
-  if (!el) {
-    return;
-  }
-  const rect = el.getBoundingClientRect();
-  positionRef.value = {
-    top: rect.bottom + window.scrollY + 6,
-    left: rect.left + window.scrollX,
-    width: rect.width,
-  };
-}
-
-function updateDropdownPositions() {
-  if (includeDropdownOpen.value) {
-    setDropdownPosition(includeTriggerRef, includeDropdownPosition);
-  }
-  if (excludeDropdownOpen.value) {
-    setDropdownPosition(excludeTriggerRef, excludeDropdownPosition);
-  }
-  if (summaryCountryDropdownOpen.value) {
-    setDropdownPosition(summaryCountryTriggerRef, summaryCountryDropdownPosition);
-  }
-}
-
 function closeDropdowns(event) {
   const target = event?.target;
   const insideContainer = target?.closest?.(".multiselect-container");
   const insideDropdown =
     target?.closest?.("[data-dropdown-panel='country']") ||
-    target?.closest?.("[data-dropdown-panel='country-exclude']") ||
-    target?.closest?.("[data-dropdown-panel='summary-country']");
+    target?.closest?.("[data-dropdown-panel='country-exclude']");
   if (!insideContainer && !insideDropdown) {
     includeDropdownOpen.value = false;
     excludeDropdownOpen.value = false;
-    summaryCountryDropdownOpen.value = false;
   }
 }
-
-function exportSummaryCsv() {
-  if (!summary.value.length) {
-    return;
-  }
-
-  // Build headers with weapon columns
-  const headers = [
-    "Rank",
-    "Player",
-    "Country",
-    "Side",
-    "Total Damage",
-    "Hits",
-    ...WEAPON_ORDER.map((w) => `${w} Damage`),
-    ...WEAPON_ORDER.map((w) => `${w} Hits`),
-  ];
-
-  const rows = summary.value.map((player, index) => {
-    const baseRow = [
-      index + 1,
-      player.player_name || `Player #${player.fighter_id}`,
-      player.country_name || "",
-      player.side,
-      player.total_damage,
-      player.hit_count,
-    ];
-
-    // Add weapon damage columns
-    const weaponDamage = WEAPON_ORDER.map((w) => player.weapons?.[w]?.damage || 0);
-    // Add weapon hits columns
-    const weaponHits = WEAPON_ORDER.map((w) => player.weapons?.[w]?.hits || 0);
-
-    return [...baseRow, ...weaponDamage, ...weaponHits];
-  });
-
-  const csvContent = [headers, ...rows]
-    .map((row) =>
-      row
-        .map((value) => {
-          const stringValue = value ?? "";
-          return `"${String(stringValue).replace(/"/g, '""')}"`;
-        })
-        .join(",")
-    )
-    .join("\n");
-
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.setAttribute("download", `war-summary-${new Date().toISOString()}.csv`);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-}
-
-watch(includeDropdownOpen, async (isOpen) => {
-  if (isOpen) {
-    await nextTick();
-    setDropdownPosition(includeTriggerRef, includeDropdownPosition);
-  }
-});
-
-watch(excludeDropdownOpen, async (isOpen) => {
-  if (isOpen) {
-    await nextTick();
-    setDropdownPosition(excludeTriggerRef, excludeDropdownPosition);
-  }
-});
-
-watch(summaryCountryDropdownOpen, async (isOpen) => {
-  if (isOpen) {
-    await nextTick();
-    setDropdownPosition(summaryCountryTriggerRef, summaryCountryDropdownPosition);
-  }
-});
-
-// Reset summary country filter when summary changes
-watch(summary, () => {
-  expandedPlayers.value = new Set();
-  summaryCountryFilter.value = [];
-  summaryCountrySearch.value = "";
-});
 
 watch(
   userApiKey,
@@ -686,21 +465,17 @@ watch(
       localStorage.setItem(API_KEY_STORAGE_KEY, value.trim());
     }
   },
-  { immediate: false }
+  { immediate: false },
 );
 
 // Load battles on mount
 onMounted(() => {
   loadBattles();
   document.addEventListener("click", closeDropdowns);
-  window.addEventListener("scroll", updateDropdownPositions, true);
-  window.addEventListener("resize", updateDropdownPositions);
 });
 
 onUnmounted(() => {
   document.removeEventListener("click", closeDropdowns);
-  window.removeEventListener("scroll", updateDropdownPositions, true);
-  window.removeEventListener("resize", updateDropdownPositions);
 });
 </script>
 
@@ -747,996 +522,85 @@ onUnmounted(() => {
         <p>{{ error }}</p>
       </div>
 
-      <!-- Fetch controls -->
-      <section
-        class="bg-slate-900/50 border border-slate-800 rounded-xl p-4 shadow-xl backdrop-blur-sm relative overflow-hidden"
-      >
-        <div
-          class="absolute -right-10 -top-10 w-32 h-32 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none"
-        ></div>
+      <FetchControls
+        :user-api-key="userApiKey"
+        :new-battle-id="newBattleId"
+        :range-from-id="rangeFromId"
+        :range-to-id="rangeToId"
+        :fetching-battle="fetchingBattle"
+        :fetch-progress="fetchProgress"
+        @update:user-api-key="userApiKey = $event"
+        @update:new-battle-id="newBattleId = $event"
+        @update:range-from-id="rangeFromId = $event"
+        @update:range-to-id="rangeToId = $event"
+        @fetch-battle="handleFetchBattle"
+        @fetch-range="handleFetchRange"
+        @clear-api-key="userApiKey = ''"
+      />
 
-        <div class="flex flex-wrap gap-6 relative z-10">
-          <!-- API key input -->
-          <div class="relative group">
-            <label
-              class="absolute -top-2.5 left-3 px-1 bg-slate-900 text-[10px] font-bold text-slate-500 uppercase tracking-wider z-10"
-              >Eclesiar API Key</label
-            >
-            <div class="flex items-center gap-2">
-              <div class="relative">
-                <svg
-                  class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-hover:text-emerald-400 transition-colors"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M12 11c0-1.104.672-2 1.5-2s1.5.896 1.5 2v2h-3v-2zM7 9V7a5 5 0 0110 0v2h1a2 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2v-8a2 2 0 012-2h1z"
-                  ></path>
-                </svg>
-                <input
-                  v-model.trim="userApiKey"
-                  type="password"
-                  placeholder="Key is saved ONLY in your browser."
-                  class="w-72 bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg pl-10 pr-3 py-2.5 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all outline-none hover:bg-slate-900"
-                />
-              </div>
-              <button
-                type="button"
-                class="px-3 py-1.5 text-xs text-slate-400 border border-slate-700 rounded-lg hover:text-white hover:border-emerald-500/40 transition-colors"
-                @click="userApiKey = ''"
-              >
-                Clear
-              </button>
-            </div>
-          </div>
-          <!-- Single battle fetch -->
-          <div class="relative group">
-            <label
-              class="absolute -top-2.5 left-3 px-1 bg-slate-900 text-[10px] font-bold text-slate-500 uppercase tracking-wider z-10"
-              >Single Fetch</label
-            >
-            <div class="flex gap-2 items-center">
-              <div class="relative">
-                <svg
-                  class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-hover:text-emerald-400 transition-colors"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                  ></path>
-                </svg>
-                <input
-                  v-model="newBattleId"
-                  type="number"
-                  placeholder="Battle ID"
-                  class="w-30 bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg pl-10 pr-3 py-2.5 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all outline-none hover:bg-slate-900"
-                  @keyup.enter="handleFetchBattle"
-                />
-              </div>
-              <button
-                @click="handleFetchBattle"
-                :disabled="fetchingBattle || !newBattleId"
-                class="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-slate-950 text-sm font-bold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500 shadow-lg shadow-emerald-500/20"
-              >
-                <span v-if="fetchingBattle">Fetching...</span>
-                <span v-else>Fetch</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Range fetch -->
-          <div class="relative group">
-            <label
-              class="absolute -top-2.5 left-3 px-1 bg-slate-900 text-[10px] font-bold text-slate-500 uppercase tracking-wider z-10"
-              >Range Fetch</label
-            >
-            <div class="flex gap-2 items-center">
-              <div class="relative">
-                <svg
-                  class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-hover:text-emerald-400 transition-colors"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                  ></path>
-                </svg>
-                <input
-                  v-model="rangeFromId"
-                  type="number"
-                  placeholder="From"
-                  :disabled="fetchProgress?.isRunning"
-                  class="w-32 bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg pl-10 pr-3 py-2.5 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all outline-none hover:bg-slate-900 disabled:opacity-50"
-                />
-              </div>
-              <span class="text-slate-600">→</span>
-              <input
-                v-model="rangeToId"
-                type="number"
-                placeholder="To"
-                :disabled="fetchProgress?.isRunning"
-                class="w-32 bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all outline-none hover:bg-slate-900 disabled:opacity-50"
-              />
-              <button
-                @click="handleFetchRange"
-                :disabled="fetchProgress?.isRunning || !rangeFromId || !rangeToId"
-                class="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed border border-slate-700 hover:border-emerald-500/30"
-              >
-                Fetch Range
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Progress bar -->
-        <div v-if="fetchProgress?.isRunning || fetchProgress?.total > 0" class="mt-4 pt-4 border-t border-slate-800">
-          <div class="flex justify-between text-sm text-slate-400 mb-2">
-            <span class="font-mono">Progress: {{ fetchProgress.current }} / {{ fetchProgress.total }}</span>
-            <span>
-              <span class="text-emerald-400 font-medium">{{ fetchProgress.completedCount }} OK</span>
-              <span v-if="fetchProgress.failedCount > 0" class="text-red-400 ml-2"
-                >{{ fetchProgress.failedCount }} failed</span
-              >
-            </span>
-          </div>
-          <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-            <div
-              class="bg-gradient-to-r from-emerald-500 to-emerald-400 h-2 rounded-full transition-all duration-300 shadow-[0_0_10px_rgba(16,185,129,0.5)]"
-              :style="{ width: `${(fetchProgress.current / fetchProgress.total) * 100}%` }"
-            ></div>
-          </div>
-          <p v-if="!fetchProgress.isRunning" class="text-sm text-emerald-400 mt-2 font-medium">✓ Fetch completed!</p>
-        </div>
-      </section>
-
-      <!-- Filters Section -->
-      <section class="relative z-20 bg-slate-900/50 border border-slate-800 rounded-xl p-4 shadow-xl backdrop-blur-sm">
-        <div class="flex items-center justify-between mb-3">
-          <div class="flex items-center gap-4">
-            <h3 class="text-lg font-semibold text-white">Filters</h3>
-            <!-- Selection stats -->
-            <div v-if="hasSelectedBattles" class="flex items-center gap-2 text-xs text-slate-500 font-mono">
-              <span>Manual: {{ selectedBattleIds.length }}</span>
-              <span class="text-slate-700">|</span>
-              <span>Filters: {{ filterSelectedBattleIds.length }}</span>
-              <span class="text-slate-700">|</span>
-              <span class="text-emerald-400">Total: {{ combinedBattleIds.length }}</span>
-            </div>
-          </div>
-          <div class="flex items-center gap-3 text-sm">
-            <span v-if="hasActiveFilters" class="text-slate-400 font-mono text-xs">
-              {{ filteredBattleIds.length }} matched
-            </span>
-            <button
-              v-if="hasActiveFilters"
-              @click="clearAllFilters"
-              class="px-2 py-1 text-xs text-slate-300 hover:text-white hover:bg-slate-800 rounded border border-slate-700 transition-colors"
-            >
-              Clear all
-            </button>
-          </div>
-        </div>
-
-        <!-- All filters in one row -->
-        <div class="flex flex-wrap items-end gap-4">
-          <!-- Date Range Filter -->
-          <div class="flex-shrink-0 min-w-[260px]">
-            <label class="block text-sm font-medium text-amber-400 mb-2">Date Range</label>
-            <div class="flex items-center gap-3">
-              <input
-                v-model="dateFrom"
-                type="date"
-                class="w-40 bg-slate-950 border border-slate-800 text-slate-200 text-sm rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-amber-500/40 focus:border-amber-400 transition-all outline-none hover:bg-slate-900"
-              />
-              <span class="text-slate-600 text-sm">→</span>
-              <input
-                v-model="dateTo"
-                type="date"
-                class="w-40 bg-slate-950 border border-slate-800 text-slate-200 text-sm rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-amber-500/40 focus:border-amber-400 transition-all outline-none hover:bg-slate-900"
-              />
-            </div>
-          </div>
-
-          <!-- Include countries multiselect -->
-          <div class="multiselect-container relative flex-1 min-w-[260px]">
-            <label class="block text-sm font-medium text-emerald-400 mb-2">Include</label>
-
-            <!-- Trigger button -->
-            <button
-              ref="includeTriggerRef"
-              type="button"
-              @click.stop="
-                includeDropdownOpen = !includeDropdownOpen;
-                excludeDropdownOpen = false;
-              "
-              class="w-full min-h-[44px] px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-left flex items-center gap-2 flex-wrap hover:border-emerald-500/50 focus:outline-none focus:border-emerald-500 transition-colors"
-            >
-              <template v-if="countryFilters.length">
-                <span
-                  v-for="country in countryFilters"
-                  :key="country"
-                  class="inline-flex items-center gap-1 bg-emerald-500/20 text-emerald-200 pl-2 pr-1.5 py-0.5 rounded text-sm border border-emerald-500/30"
-                >
-                  {{ country }}
-                  <button
-                    type="button"
-                    class="p-0.5 hover:bg-emerald-500/30 rounded transition-colors"
-                    @click="removeCountryChip(country, $event)"
-                  >
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M6 18L18 6M6 6l12 12"
-                      ></path>
-                    </svg>
-                  </button>
-                </span>
-              </template>
-              <span v-else class="text-slate-500 text-sm">Select countries...</span>
-              <svg
-                class="w-5 h-5 text-slate-500 ml-auto flex-shrink-0 transition-transform"
-                :class="{ 'rotate-180': includeDropdownOpen }"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-              </svg>
-            </button>
-
-            <!-- Dropdown -->
-            <div
-              v-show="includeDropdownOpen"
-              class="absolute z-50 w-full mt-1 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl overflow-hidden"
-            >
-              <!-- Search -->
-              <div class="p-2 border-b border-slate-800">
-                <div class="relative">
-                  <svg
-                    class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                    ></path>
-                  </svg>
-                  <input
-                    v-model="countrySearch"
-                    type="text"
-                    placeholder="Search countries..."
-                    class="w-full pl-9 pr-8 py-2 bg-slate-950 border border-slate-800 rounded-md text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                    @click.stop
-                  />
-                  <button
-                    v-if="countrySearch"
-                    class="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-white rounded"
-                    @click.stop="countrySearch = ''"
-                    type="button"
-                  >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M6 18L18 6M6 6l12 12"
-                      ></path>
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
-              <!-- Options -->
-              <div class="max-h-60 overflow-y-auto">
-                <template v-if="filteredCountryOptions.length">
-                  <button
-                    v-for="country in filteredCountryOptions"
-                    :key="country"
-                    type="button"
-                    class="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-700/60 transition-colors"
-                    :class="{ 'bg-green-500/10': countryFilters.includes(country) }"
-                    @click.stop="toggleCountryOption(country)"
-                  >
-                    <span
-                      class="w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors"
-                      :class="countryFilters.includes(country) ? 'bg-green-500 border-green-500' : 'border-gray-500'"
-                    >
-                      <svg
-                        v-if="countryFilters.includes(country)"
-                        class="w-3 h-3 text-white"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>
-                      </svg>
-                    </span>
-                    <span class="text-sm text-gray-200">{{ country }}</span>
-                  </button>
-                </template>
-                <div v-else class="px-3 py-6 text-center text-sm text-gray-500">
-                  No countries match "{{ countrySearch }}"
-                </div>
-              </div>
-
-              <!-- Footer -->
-              <div v-if="countryFilters.length" class="p-2 border-t border-gray-700 bg-gray-800/80">
-                <button
-                  type="button"
-                  class="w-full px-3 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
-                  @click.stop="clearCountryFilters"
-                >
-                  Clear selection ({{ countryFilters.length }})
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Exclude countries multiselect -->
-          <div class="multiselect-container relative flex-1 min-w-[260px]">
-            <label class="block text-sm font-medium text-red-400 mb-2">Exclude</label>
-
-            <!-- Trigger button -->
-            <button
-              type="button"
-              ref="excludeTriggerRef"
-              @click.stop="
-                excludeDropdownOpen = !excludeDropdownOpen;
-                includeDropdownOpen = false;
-              "
-              class="w-full min-h-[44px] px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-left flex items-center gap-2 flex-wrap hover:border-red-500/50 focus:outline-none focus:border-red-500 transition-colors"
-            >
-              <template v-if="excludeCountryFilters.length">
-                <span
-                  v-for="country in excludeCountryFilters"
-                  :key="country"
-                  class="inline-flex items-center gap-1 bg-red-500/20 text-red-200 pl-2 pr-1.5 py-0.5 rounded text-sm border border-red-500/30"
-                >
-                  {{ country }}
-                  <button
-                    type="button"
-                    class="p-0.5 hover:bg-red-500/30 rounded transition-colors"
-                    @click="removeExcludeCountryChip(country, $event)"
-                  >
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M6 18L18 6M6 6l12 12"
-                      ></path>
-                    </svg>
-                  </button>
-                </span>
-              </template>
-              <span v-else class="text-slate-500 text-sm">Select countries...</span>
-              <svg
-                class="w-5 h-5 text-slate-500 ml-auto flex-shrink-0 transition-transform"
-                :class="{ 'rotate-180': excludeDropdownOpen }"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-              </svg>
-            </button>
-
-            <!-- Dropdown -->
-            <div
-              v-show="excludeDropdownOpen"
-              class="absolute z-50 w-full mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl overflow-hidden"
-            >
-              <!-- Search -->
-              <div class="p-2 border-b border-gray-700">
-                <div class="relative">
-                  <svg
-                    class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                    ></path>
-                  </svg>
-                  <input
-                    v-model="excludeCountrySearch"
-                    type="text"
-                    placeholder="Search countries..."
-                    class="w-full pl-9 pr-8 py-2 bg-gray-700 border border-gray-600 rounded-md text-sm text-white placeholder-gray-500 focus:outline-none focus:border-red-500"
-                    @click.stop
-                  />
-                  <button
-                    v-if="excludeCountrySearch"
-                    class="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-white rounded"
-                    @click.stop="excludeCountrySearch = ''"
-                    type="button"
-                  >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M6 18L18 6M6 6l12 12"
-                      ></path>
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
-              <!-- Options -->
-              <div class="max-h-60 overflow-y-auto">
-                <template v-if="filteredExcludeCountryOptions.length">
-                  <button
-                    v-for="country in filteredExcludeCountryOptions"
-                    :key="country"
-                    type="button"
-                    class="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-700/60 transition-colors"
-                    :class="{ 'bg-red-500/10': excludeCountryFilters.includes(country) }"
-                    @click.stop="toggleExcludeCountryOption(country)"
-                  >
-                    <span
-                      class="w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors"
-                      :class="excludeCountryFilters.includes(country) ? 'bg-red-500 border-red-500' : 'border-gray-500'"
-                    >
-                      <svg
-                        v-if="excludeCountryFilters.includes(country)"
-                        class="w-3 h-3 text-white"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="3"
-                          d="M6 18L18 6M6 6l12 12"
-                        ></path>
-                      </svg>
-                    </span>
-                    <span class="text-sm text-gray-200">{{ country }}</span>
-                  </button>
-                </template>
-                <div v-else class="px-3 py-6 text-center text-sm text-gray-500">
-                  No countries match "{{ excludeCountrySearch }}"
-                </div>
-              </div>
-
-              <!-- Footer -->
-              <div v-if="excludeCountryFilters.length" class="p-2 border-t border-gray-700 bg-gray-800/80">
-                <button
-                  type="button"
-                  class="w-full px-3 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
-                  @click.stop="clearExcludeCountryFilters"
-                >
-                  Clear selection ({{ excludeCountryFilters.length }})
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+      <FiltersSection
+        :has-selected-battles="hasSelectedBattles"
+        :selected-battle-count="selectedBattleIds.length"
+        :filter-selected-battle-count="filterSelectedBattleIds.length"
+        :combined-battle-count="combinedBattleIds.length"
+        :has-active-filters="hasActiveFilters"
+        :filtered-battle-ids-count="filteredBattleIds.length"
+        :date-from="dateFrom"
+        :date-to="dateTo"
+        :country-filters="countryFilters"
+        :exclude-country-filters="excludeCountryFilters"
+        :country-search="countrySearch"
+        :exclude-country-search="excludeCountrySearch"
+        :include-dropdown-open="includeDropdownOpen"
+        :exclude-dropdown-open="excludeDropdownOpen"
+        :filtered-country-options="filteredCountryOptions"
+        :filtered-exclude-country-options="filteredExcludeCountryOptions"
+        @update:date-from="dateFrom = $event"
+        @update:date-to="dateTo = $event"
+        @update:country-search="countrySearch = $event"
+        @update:exclude-country-search="excludeCountrySearch = $event"
+        @update:include-dropdown-open="includeDropdownOpen = $event"
+        @update:exclude-dropdown-open="excludeDropdownOpen = $event"
+        @clear-all-filters="clearAllFilters"
+        @clear-country-filters="clearCountryFilters"
+        @clear-exclude-country-filters="clearExcludeCountryFilters"
+        @toggle-country-option="toggleCountryOption"
+        @toggle-exclude-country-option="toggleExcludeCountryOption"
+        @remove-country-chip="removeCountryChip"
+        @remove-exclude-country-chip="removeExcludeCountryChip"
+      />
 
       <div class="relative grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <!-- Battles table -->
-        <div class="bg-slate-900/50 border border-slate-800 rounded-xl p-6 shadow-xl backdrop-blur-sm">
-          <div class="flex justify-between items-center mb-4">
-            <h2 class="text-xl font-semibold text-white flex items-center gap-2">
-              <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-                ></path>
-              </svg>
-              Battles
-            </h2>
-            <div class="flex gap-2">
-              <button
-                @click="toggleAllBattles"
-                class="px-3 py-1.5 text-sm bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 transition-colors"
-              >
-                {{ selectedBattleIds.length === battles.length ? "Deselect All" : "Select All" }}
-              </button>
-              <button
-                @click="generateSummary"
-                :disabled="!hasSelectedBattles || loadingSummary"
-                class="px-4 py-1.5 text-sm font-bold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500 bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-lg shadow-emerald-500/20"
-              >
-                <span v-if="loadingSummary">Loading...</span>
-                <span v-else>Generate Summary ({{ combinedBattleIds.length }})</span>
-              </button>
-            </div>
-          </div>
-
-          <div v-if="countryFilters.length || excludeCountryFilters.length" class="mb-4 text-sm text-slate-400">
-            Showing {{ displayedBattles.length }} of {{ battles.length }} battles (filtered)
-          </div>
-
-          <!-- Loading state -->
-          <div v-if="loading" class="text-center py-12 text-slate-500">
-            <svg class="w-8 h-8 mx-auto mb-3 animate-spin text-emerald-500" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path
-                class="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
-            Loading battles...
-          </div>
-
-          <!-- Empty state -->
-          <div v-else-if="battles.length === 0" class="text-center py-12 text-slate-500">
-            <svg class="w-12 h-12 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="1.5"
-                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-              ></path>
-            </svg>
-            <p>No battles found. Fetch a battle using the ID above.</p>
-          </div>
-
-          <!-- Battles list -->
-          <div v-else class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead class="bg-slate-950/50 text-slate-400 font-medium uppercase text-xs tracking-wider">
-                <tr>
-                  <th class="px-1 py-3 text-center w-8" title="Select">☑</th>
-                  <th class="px-2 py-3 text-left">ID</th>
-                  <th class="px-2 py-3 text-left">Attacker</th>
-                  <th class="px-2 py-3 text-left">Defender</th>
-                  <th class="px-2 py-3 text-left">Region</th>
-                  <th class="px-2 py-3 text-left">Date</th>
-                  <th class="px-2 py-3 text-center">Score</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-800/50">
-                <tr
-                  v-for="battle in sortedDisplayedBattles"
-                  :key="battle.id"
-                  class="hover:bg-slate-800/30 transition-colors group"
-                  :class="{ 'bg-amber-500/5': isBattleIncomplete(battle) }"
-                >
-                  <td class="px-0 py-2 w-6 text-center">
-                    <input
-                      type="checkbox"
-                      :checked="isBattleSelected(battle.id)"
-                      @change="toggleBattle(battle.id, $event.target.checked)"
-                      class="w-4 h-4 rounded bg-slate-800 border-slate-600 text-emerald-500 focus:ring-emerald-500/50 focus:ring-offset-0"
-                    />
-                  </td>
-                  <td class="px-2 py-2">
-                    <div class="flex items-center gap-1.5">
-                      <span class="font-mono text-slate-500">{{ battle.id }}</span>
-                      <!-- Refresh button for incomplete battles -->
-                      <button
-                        v-if="isBattleIncomplete(battle)"
-                        @click.stop="refreshBattle(battle.id)"
-                        :disabled="refreshingBattleId !== null"
-                        class="p-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 hover:text-amber-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        :title="`Refresh (score: ${battle.attackers_score}:${battle.defenders_score})`"
-                      >
-                        <svg 
-                          v-if="refreshingBattleId === battle.id" 
-                          class="w-3 h-3 animate-spin" 
-                          fill="none" 
-                          viewBox="0 0 24 24"
-                        >
-                          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                        </svg>
-                      </button>
-                    </div>
-                  </td>
-                  <td class="px-2 py-2">
-                    <div class="flex items-center gap-1.5">
-                      <img
-                        v-if="battle.attacker_avatar"
-                        :src="battle.attacker_avatar"
-                        class="w-5 h-5 rounded border border-slate-700"
-                        :alt="battle.attacker_name"
-                      />
-                      <span class="text-slate-200 group-hover:text-white transition-colors text-xs">{{
-                        battle.attacker_name
-                      }}</span>
-                    </div>
-                  </td>
-                  <td class="px-2 py-2">
-                    <div class="flex items-center gap-1.5">
-                      <img
-                        v-if="battle.defender_avatar"
-                        :src="battle.defender_avatar"
-                        class="w-5 h-5 rounded border border-slate-700"
-                        :alt="battle.defender_name"
-                      />
-                      <span class="text-slate-200 group-hover:text-white transition-colors text-xs">{{
-                        battle.defender_name
-                      }}</span>
-                    </div>
-                  </td>
-                  <td class="px-2 py-2">
-                    <div class="text-slate-300 text-xs">{{ battle.region_name || "Unknown" }}</div>
-                  </td>
-                  <td class="px-2 py-2 text-slate-400 text-xs font-mono">
-                    {{ battle.end_date ? new Date(battle.end_date).toLocaleDateString("pl-PL") : "-" }}
-                  </td>
-                  <td class="px-2 py-2 text-center font-mono text-xs">
-                    <span 
-                      :class="isBattleIncomplete(battle) ? 'text-amber-400' : 'text-slate-400'"
-                    >
-                      {{ battle.attackers_score }}:{{ battle.defenders_score }}
-                    </span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Summary panel -->
-        <div class="bg-slate-900/50 border border-slate-800 rounded-xl p-6 shadow-xl backdrop-blur-sm">
-          <div class="flex items-center justify-between mb-4">
-            <div>
-              <h2 class="text-xl font-semibold text-white flex items-center gap-2">
-                <svg class="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"
-                  ></path>
-                </svg>
-                War Summary
-              </h2>
-              <p class="text-sm text-slate-500">Aggregated damage from selected battles</p>
-            </div>
-            <div class="flex items-center gap-3">
-              <span v-if="summary.length" class="text-sm text-slate-400 font-mono">
-                {{ sortedSummary.length }}<span v-if="summaryCountryFilter.length" class="text-emerald-400">/{{ summary.length }}</span> players
-              </span>
-              
-              <!-- Country filter dropdown for summary -->
-              <div v-if="availableSummaryCountries.length > 0" class="multiselect-container relative">
-                <button
-                  ref="summaryCountryTriggerRef"
-                  type="button"
-                  class="flex items-center gap-2 px-3 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium rounded-lg border border-slate-700 hover:border-emerald-500/30 transition-colors"
-                  @click.stop="summaryCountryDropdownOpen = !summaryCountryDropdownOpen"
-                >
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
-                  </svg>
-                  <span v-if="summaryCountryFilter.length">{{ summaryCountryFilter.length }} countries</span>
-                  <span v-else>Filter by country</span>
-                  <svg class="w-3 h-3 transition-transform" :class="{ 'rotate-180': summaryCountryDropdownOpen }" fill="currentColor" viewBox="0 0 20 20">
-                    <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
-                  </svg>
-                </button>
-                
-                <!-- Dropdown panel -->
-                <Teleport to="body">
-                  <div
-                    v-if="summaryCountryDropdownOpen"
-                    data-dropdown-panel="summary-country"
-                    class="fixed z-50 bg-slate-800 border border-slate-700 rounded-lg shadow-xl overflow-hidden min-w-[200px]"
-                    :style="summaryCountryDropdownStyle"
-                    @click.stop
-                  >
-                    <!-- Search -->
-                    <div class="p-2 border-b border-slate-700">
-                      <div class="relative">
-                        <svg class="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                        </svg>
-                        <input
-                          v-model="summaryCountrySearch"
-                          type="text"
-                          placeholder="Search..."
-                          class="w-full pl-8 pr-8 py-1.5 bg-slate-900 border border-slate-700 rounded text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500/50"
-                          @click.stop
-                        />
-                        <button
-                          v-if="summaryCountrySearch"
-                          class="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-white rounded"
-                          @click.stop="summaryCountrySearch = ''"
-                          type="button"
-                        >
-                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                    
-                    <!-- Options -->
-                    <div class="max-h-60 overflow-y-auto">
-                      <template v-if="filteredSummaryCountryOptions.length">
-                        <button
-                          v-for="country in filteredSummaryCountryOptions"
-                          :key="country"
-                          type="button"
-                          class="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-slate-700/60 transition-colors"
-                          :class="{ 'bg-emerald-500/10': summaryCountryFilter.includes(country) }"
-                          @click.stop="toggleSummaryCountryOption(country)"
-                        >
-                          <span
-                            class="w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors"
-                            :class="summaryCountryFilter.includes(country) ? 'bg-emerald-500 border-emerald-500' : 'border-slate-500'"
-                          >
-                            <svg v-if="summaryCountryFilter.includes(country)" class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                          </span>
-                          <span class="text-sm text-slate-200">{{ country }}</span>
-                        </button>
-                      </template>
-                      <div v-else class="px-3 py-4 text-center text-sm text-slate-500">
-                        No countries match "{{ summaryCountrySearch }}"
-                      </div>
-                    </div>
-                    
-                    <!-- Footer -->
-                    <div v-if="summaryCountryFilter.length" class="p-2 border-t border-slate-700 bg-slate-800/80">
-                      <button
-                        type="button"
-                        class="w-full px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
-                        @click.stop="clearSummaryCountryFilter"
-                      >
-                        Clear selection ({{ summaryCountryFilter.length }})
-                      </button>
-                    </div>
-                  </div>
-                </Teleport>
-              </div>
-              
-              <button
-                class="px-3 py-2 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-lg border border-slate-700 hover:border-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                :disabled="!playersWithWeaponBreakdown.length"
-                @click="toggleAllWeaponBreakdowns(!allWeaponBreakdownsExpanded)"
-              >
-                {{ allWeaponBreakdownsExpanded ? "Collapse all" : "Expand all" }}
-              </button>
-              <button
-                class="px-4 py-2 text-sm bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium rounded-lg border border-slate-700 hover:border-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-                :disabled="!summary.length"
-                @click="exportSummaryCsv"
-              >
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                  ></path>
-                </svg>
-                Export CSV
-              </button>
-            </div>
-          </div>
-
-          <!-- Empty state -->
-          <div v-if="summary.length === 0" class="text-center py-12 text-slate-500">
-            <svg class="w-12 h-12 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="1.5"
-                d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-              ></path>
-            </svg>
-            <p>Select battles and click "Generate Summary" to see damage totals.</p>
-          </div>
-
-          <!-- Summary table -->
-          <div v-else class="overflow-x-auto min-h-[500px] overflow-y-auto">
-            <table class="w-full text-sm">
-              <thead class="sticky top-0 bg-slate-900 text-slate-400 font-medium uppercase text-xs tracking-wider z-10">
-                <tr>
-                  <th class="px-2 py-3 text-left w-12">#</th>
-                  <th 
-                    class="px-4 py-3 text-left cursor-pointer hover:text-emerald-400 transition-colors select-none"
-                    @click="toggleSummarySort('player_name')"
-                  >
-                    <div class="flex items-center gap-1">
-                      Player
-                      <svg v-if="summarySortKey === 'player_name'" class="w-3 h-3 transition-transform" :class="{ 'rotate-180': !summarySortAsc }" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
-                      </svg>
-                    </div>
-                  </th>
-                  <th 
-                    class="px-2 py-3 text-center cursor-pointer hover:text-emerald-400 transition-colors select-none w-10"
-                    title="Sort by Country"
-                    @click="toggleSummarySort('country_name')"
-                  >
-                    <div class="flex items-center justify-center gap-1">
-                      🏳️
-                      <svg v-if="summarySortKey === 'country_name'" class="w-3 h-3 transition-transform" :class="{ 'rotate-180': !summarySortAsc }" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
-                      </svg>
-                    </div>
-                  </th>
-                  <th 
-                    class="px-4 py-3 text-left cursor-pointer hover:text-emerald-400 transition-colors select-none"
-                    @click="toggleSummarySort('side')"
-                  >
-                    <div class="flex items-center gap-1">
-                      Side
-                      <svg v-if="summarySortKey === 'side'" class="w-3 h-3 transition-transform" :class="{ 'rotate-180': !summarySortAsc }" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
-                      </svg>
-                    </div>
-                  </th>
-                  <th 
-                    class="px-4 py-3 text-right whitespace-nowrap cursor-pointer hover:text-emerald-400 transition-colors select-none"
-                    @click="toggleSummarySort('total_damage')"
-                  >
-                    <div class="flex items-center justify-end gap-1">
-                      Total Damage
-                      <svg v-if="summarySortKey === 'total_damage'" class="w-3 h-3 transition-transform" :class="{ 'rotate-180': summarySortAsc }" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
-                      </svg>
-                    </div>
-                  </th>
-                  <th 
-                    class="px-4 py-3 text-right whitespace-nowrap cursor-pointer hover:text-emerald-400 transition-colors select-none"
-                    @click="toggleSummarySort('hit_count')"
-                  >
-                    <div class="flex items-center justify-end gap-1">
-                      Hits
-                      <svg v-if="summarySortKey === 'hit_count'" class="w-3 h-3 transition-transform" :class="{ 'rotate-180': summarySortAsc }" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
-                      </svg>
-                    </div>
-                  </th>
-                  <th class="px-4 py-3 text-left">Weapon Breakdown</th>
-                </tr>
-              </thead>
-
-              <tbody class="divide-y divide-slate-800/50">
-                <template v-for="(player, index) in sortedSummary" :key="`${player.fighter_id}-${player.side}`">
-                  <tr class="hover:bg-slate-800/30 transition-colors group">
-                    <td class="px-2 py-3 font-mono text-slate-600 text-xs">{{ index + 1 }}</td>
-                    <td class="px-4 py-3">
-                      <div class="flex items-center gap-2">
-                        <!-- Player avatar -->
-                        <img
-                          v-if="player.player_avatar"
-                          :src="player.player_avatar"
-                          :alt="player.player_name"
-                          class="w-8 h-8 rounded-full border border-slate-700 group-hover:border-emerald-500/50 transition-colors object-cover"
-                        />
-                        <!-- Fallback letter circle -->
-                        <div
-                          v-else
-                          class="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-300 border border-slate-700 group-hover:border-emerald-500/50 group-hover:text-emerald-400 transition-colors"
-                        >
-                          {{ (player.player_name || "P").charAt(0).toUpperCase() }}
-                        </div>
-                        <a
-                          class="text-slate-200 group-hover:text-white transition-colors underline-offset-2 hover:underline"
-                          :href="`https://eclesiar.com/user/${player.fighter_id}`"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          {{ player.player_name || `Player #${player.fighter_id}` }}
-                        </a>
-                      </div>
-                    </td>
-                    <td class="px-2 py-3 text-center">
-                      <div class="flex justify-center">
-                        <img 
-                          v-if="player.country_avatar" 
-                          :src="player.country_avatar" 
-                          :alt="player.country_name" 
-                          :title="player.country_name"
-                          class="w-6 h-4 object-cover rounded shadow-sm border border-slate-700/50"
-                        />
-                        <span v-else class="text-slate-600 text-[10px]">—</span>
-                      </div>
-                    </td>
-                    <td class="px-4 py-3">
-                      <span
-                        :class="
-                          player.side === 'ATTACKER'
-                            ? 'bg-red-500/10 text-red-400 border-red-500/20'
-                            : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-                        "
-                        class="text-xs font-bold px-2 py-1 rounded border"
-                      >
-                        {{ player.side || "UNKNOWN" }}
-                      </span>
-                    </td>
-                    <td class="px-4 py-3 text-right font-mono text-emerald-400 font-medium whitespace-nowrap">
-                      {{ formatNumber(player.total_damage) }}
-                    </td>
-                    <td class="px-4 py-3 text-right font-mono text-slate-500 whitespace-nowrap">
-                      {{ formatNumber(player.hit_count) }}
-                    </td>
-                    <td class="px-4 py-3">
-                      <button
-                        v-if="hasWeaponBreakdown(player)"
-                        type="button"
-                        class="inline-flex items-center gap-1 text-xs font-semibold text-emerald-300 hover:text-emerald-200 transition-colors"
-                        :aria-expanded="isWeaponExpanded(player.fighter_id)"
-                        @click="toggleWeaponBreakdown(player.fighter_id)"
-                      >
-                        <svg
-                          class="w-3.5 h-3.5 transition-transform"
-                          :class="{ 'rotate-90': isWeaponExpanded(player.fighter_id) }"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                        </svg>
-                        <span>{{ isWeaponExpanded(player.fighter_id) ? "Hide breakdown" : "Show breakdown" }}</span>
-                      </button>
-                      <span v-else class="text-slate-600 text-xs">—</span>
-                    </td>
-                  </tr>
-                  <template v-if="hasWeaponBreakdown(player) && isWeaponExpanded(player.fighter_id)">
-                    <tr :key="`weapons-${player.fighter_id}`" class="bg-slate-900/40">
-                      <td colspan="7">
-                        <div class="flex flex-wrap gap-1.5 pt-2 justify-center">
-                          <template v-for="weapon in WEAPON_ORDER" :key="`${player.fighter_id}-${weapon}`">
-                            <span
-                              v-if="player.weapons && player.weapons[weapon]"
-                              class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-mono"
-                              :class="{
-                                'bg-purple-500/20 text-purple-300 border border-purple-500/30': weapon.startsWith('WQ'),
-                                'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30': weapon.startsWith('AQ'),
-                                'bg-slate-700/50 text-slate-400 border border-slate-600': weapon === 'Hand',
-                              }"
-                              :title="`${weapon}: ${formatNumber(player.weapons[weapon].damage)} dmg (${
-                                player.weapons[weapon].hits
-                              } hits)`"
-                            >
-                              <span class="font-bold">{{ weapon }}</span>
-                              <span class="text-[10px] opacity-75">{{
-                                formatNumber(player.weapons[weapon].damage)
-                              }}</span>
-                            </span>
-                          </template>
-                        </div>
-                      </td>
-                    </tr>
-                  </template>
-                </template>
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <BattlesTable
+          :loading="loading"
+          :sorted-displayed-battles="sortedDisplayedBattles"
+          :battles-count="battles.length"
+          :displayed-battles-count="displayedBattles.length"
+          :country-filters-count="countryFilters.length"
+          :exclude-country-filters-count="excludeCountryFilters.length"
+          :selected-battle-count="selectedBattleIds.length"
+          :has-selected-battles="hasSelectedBattles"
+          :combined-battle-count="combinedBattleIds.length"
+          :loading-summary="loadingSummary"
+          :refreshing-battle-id="refreshingBattleId"
+          :is-battle-incomplete="isBattleIncomplete"
+          :is-battle-selected="isBattleSelected"
+          @toggle-all-battles="toggleAllBattles"
+          @generate-summary="generateSummary"
+          @toggle-battle="toggleBattle"
+          @refresh-battle="refreshBattle"
+        />
+        <SummaryPanel :summary="summary" @open-player-details="openPlayerDetails" />
       </div>
+
+      <PlayerDetailsModal
+        :is-open="playerDetailsOpen"
+        :player="selectedPlayer"
+        :details="playerDetails"
+        :loading="playerDetailsLoading"
+        :error="playerDetailsError"
+        @close="closePlayerDetails"
+      />
     </main>
 
     <footer class="border-t border-slate-900 bg-slate-950 py-8 mt-auto">

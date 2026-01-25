@@ -1,5 +1,11 @@
 import express from "express";
-import { getAllBattles, fetchAndSaveBattle, getWarSummary, deleteBattle } from "../services/battleService.js";
+import {
+  getAllBattles,
+  fetchAndSaveBattle,
+  getWarSummary,
+  getPlayerBattleDetails,
+  deleteBattle,
+} from "../services/battleService.js";
 
 const router = express.Router();
 
@@ -23,6 +29,31 @@ router.get("/", async (req, res) => {
     res.json({ success: true, data: battles });
   } catch (error) {
     console.log("Error getting battles:", error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/battles/player-details
+ * Get per-battle details for a single player
+ * Body: { battleIds: number[], playerId: number }
+ */
+router.post("/player-details", async (req, res) => {
+  try {
+    const { battleIds, playerId } = req.body;
+
+    if (!battleIds || !Array.isArray(battleIds) || battleIds.length === 0) {
+      return res.status(400).json({ success: false, error: "battleIds array is required" });
+    }
+
+    if (!playerId) {
+      return res.status(400).json({ success: false, error: "playerId is required" });
+    }
+
+    const details = await getPlayerBattleDetails(battleIds, Number(playerId));
+    res.json({ success: true, data: details });
+  } catch (error) {
+    console.log("Error getting player details:", error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -97,7 +128,7 @@ router.post("/fetch-range", async (req, res) => {
       }
       fetchProgress.isRunning = false;
       console.log(
-        `Range fetch completed. Success: ${fetchProgress.completed.length}, Failed: ${fetchProgress.failed.length}`
+        `Range fetch completed. Success: ${fetchProgress.completed.length}, Failed: ${fetchProgress.failed.length}`,
       );
     })();
 

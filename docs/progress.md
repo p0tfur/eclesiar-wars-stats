@@ -1,0 +1,1 @@
+- 2026-01-25: Dodano zapisywanie battle hero (attackers_hero/defenders_hero) do rund, migrację DB oraz modal z detalami gracza (DMG/BH/Hits per bitwa) w War Summary.

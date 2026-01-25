@@ -58,6 +58,17 @@ export async function getWarSummary(battleIds) {
 }
 
 /**
+ * Get per-battle details for a player
+ * @param {Array<number>} battleIds - List of battle IDs
+ * @param {number} playerId - Player ID
+ * @returns {Promise<Array>} - Player details per battle
+ */
+export async function getPlayerBattleDetails(battleIds, playerId) {
+  const response = await api.post("/battles/player-details", { battleIds, playerId });
+  return response.data;
+}
+
+/**
  * Delete a battle from database
  * @param {number} battleId - Battle ID to delete
  * @returns {Promise<Object>} - Response

@@ -107,7 +107,7 @@ export async function fetchAndSaveBattle(battleId, apiKey) {
       war.defenders_score,
       war.flags?.is_revolution || 0,
       battleEndDate,
-    ]
+    ],
   );
 
   // Save rounds to database
@@ -115,13 +115,15 @@ export async function fetchAndSaveBattle(battleId, apiKey) {
     await pool.query(
       `
       INSERT INTO rounds (id, battle_id, end_date, attackers_score, defenders_score, 
-                          attackers_points, defenders_points)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+                          attackers_points, defenders_points, attackers_hero, defenders_hero)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         attackers_score = VALUES(attackers_score),
         defenders_score = VALUES(defenders_score),
         attackers_points = VALUES(attackers_points),
         defenders_points = VALUES(defenders_points),
+        attackers_hero = VALUES(attackers_hero),
+        defenders_hero = VALUES(defenders_hero),
         fetched_at = CURRENT_TIMESTAMP
     `,
       [
@@ -132,7 +134,9 @@ export async function fetchAndSaveBattle(battleId, apiKey) {
         round.defenders_score,
         round.attackers_points,
         round.defenders_points,
-      ]
+        round.attackers_hero ?? null,
+        round.defenders_hero ?? null,
+      ],
     );
 
     // Fetch and save hits for this round
@@ -159,7 +163,7 @@ export async function fetchAndSaveBattle(battleId, apiKey) {
         INSERT INTO hits (round_id, fighter_id, fighter_type, damage, side, item_id, created_at)
         VALUES ?
       `,
-        [hitValues]
+        [hitValues],
       );
 
       // Cache player info for unique fighter IDs
@@ -182,7 +186,7 @@ async function cachePlayerInfo(playerIds, apiKey) {
       // Check if player already cached with nationality (within last 24 hours)
       const [existing] = await pool.query(
         "SELECT id, nationality_id FROM players WHERE id = ? AND updated_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)",
-        [playerId]
+        [playerId],
       );
 
       // Fetch if not cached or missing nationality_id
@@ -198,7 +202,7 @@ async function cachePlayerInfo(playerIds, apiKey) {
             nationality_id = VALUES(nationality_id),
             updated_at = CURRENT_TIMESTAMP
         `,
-          [account.id, account.username, account.avatar, account.nationality_id || null]
+          [account.id, account.username, account.avatar, account.nationality_id || null],
         );
       }
     } catch (error) {
@@ -224,7 +228,7 @@ async function cacheCountry(countryId, name, avatar) {
         avatar = VALUES(avatar),
         updated_at = CURRENT_TIMESTAMP
     `,
-      [countryId, name, avatar]
+      [countryId, name, avatar],
     );
   } catch (error) {
     console.log(`Failed to cache country ${countryId}:`, error.message);
@@ -279,10 +283,7 @@ function isBattleComplete(battle) {
  * @returns {Promise<Array>} - Cached player stats or empty array
  */
 async function getCachedBattleSummary(battleId) {
-  const [rows] = await pool.query(
-    `SELECT * FROM player_battle_stats WHERE battle_id = ?`,
-    [battleId]
-  );
+  const [rows] = await pool.query(`SELECT * FROM player_battle_stats WHERE battle_id = ?`, [battleId]);
   return rows;
 }
 
@@ -315,7 +316,7 @@ async function cacheBattleSummary(battleId, playerStats) {
       `INSERT INTO player_battle_stats 
        (battle_id, player_id, player_name, player_avatar, nationality_id, total_damage, hit_count, side, weapons)
        VALUES ?`,
-      [values]
+      [values],
     );
     console.log(`Cached summary for battle ${battleId}: ${values.length} players`);
   }
@@ -356,7 +357,7 @@ async function calculateBatchSummary(battleIds) {
     GROUP BY h.fighter_id, p.name, p.avatar, p.nationality_id, c.name, c.avatar, h.item_id, h.side
     ORDER BY h.fighter_id
     `,
-    battleIds
+    battleIds,
   );
 
   // Merge results into map
@@ -374,7 +375,7 @@ async function calculateBatchSummary(battleIds) {
         total_damage: 0,
         hit_count: 0,
         weapons: {},
-          // Track first hit for side determination
+        // Track first hit for side determination
         _firstHit: row.first_hit,
         _firstHitSide: row.side,
       });
@@ -421,7 +422,7 @@ export async function getWarSummary(battleIds) {
   const placeholders = battleIds.map(() => "?").join(",");
   const [battles] = await pool.query(
     `SELECT id, attackers_score, defenders_score FROM battles WHERE id IN (${placeholders})`,
-    battleIds
+    battleIds,
   );
 
   // Separate complete and incomplete battles
@@ -455,7 +456,7 @@ export async function getWarSummary(battleIds) {
           // Get country name and avatar for this player
           const [countryRows] = await pool.query(
             `SELECT c.name, c.avatar FROM countries c JOIN players p ON p.nationality_id = c.id WHERE p.id = ?`,
-            [fighterId]
+            [fighterId],
           );
 
           playerMap.set(fighterId, {
@@ -608,10 +609,55 @@ export async function getWarSummary(battleIds) {
 }
 
 /**
+ * Get per-battle details for a single player (damage, hits, battle hero count)
+ * @param {Array<number>} battleIds - Selected battle IDs
+ * @param {number} playerId - Player ID
+ * @returns {Promise<Array>} - Per-battle details
+ */
+export async function getPlayerBattleDetails(battleIds, playerId) {
+  if (!battleIds || battleIds.length === 0 || !playerId) {
+    return [];
+  }
+
+  const placeholders = battleIds.map(() => "?").join(",");
+  const [rows] = await pool.query(
+    `
+    SELECT
+      b.id as battle_id,
+      b.attacker_name,
+      b.defender_name,
+      b.region_name,
+      b.end_date,
+      COALESCE(SUM(h.damage), 0) as total_damage,
+      COALESCE(COUNT(h.id), 0) as hit_count,
+      COALESCE(
+        SUM(
+          CASE
+            WHEN r.attackers_hero = ? THEN 1
+            WHEN r.defenders_hero = ? THEN 1
+            ELSE 0
+          END
+        ),
+        0
+      ) as bh_count
+    FROM rounds r
+    JOIN battles b ON r.battle_id = b.id
+    LEFT JOIN hits h ON h.round_id = r.id AND h.fighter_id = ?
+    WHERE r.battle_id IN (${placeholders})
+    GROUP BY b.id, b.attacker_name, b.defender_name, b.region_name, b.end_date
+    HAVING total_damage > 0 OR bh_count > 0
+    ORDER BY b.id DESC
+    `,
+    [playerId, playerId, playerId, ...battleIds],
+  );
+
+  return rows;
+}
+
+/**
  * Delete a battle and all related data
  * @param {number} battleId - Battle ID
  */
 export async function deleteBattle(battleId) {
   await pool.query("DELETE FROM battles WHERE id = ?", [battleId]);
 }
-
