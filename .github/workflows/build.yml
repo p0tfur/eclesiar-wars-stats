@@ -24,15 +24,15 @@ jobs:
             **/package-lock.json
 
       - name: Install backend deps
-        working-directory: wars/backend
+        working-directory: backend
         run: npm ci --omit=dev
 
       - name: Install frontend deps
-        working-directory: wars/frontend
+        working-directory: frontend
         run: npm ci
 
       - name: Build frontend
-        working-directory: wars/frontend
+        working-directory: frontend
         run: npm run build
 
       - name: Trigger Coolify deployment
