@@ -10,15 +10,33 @@ import {
 
 const router = express.Router();
 
+const FETCH_RANGE_MAX_BATTLES = Number(process.env.FETCH_RANGE_MAX_BATTLES || 100);
+const FETCH_RANGE_DELAY_MS = Number(process.env.FETCH_RANGE_DELAY_MS || 250);
+const FETCH_PROGRESS_FAILED_LIMIT = Number(process.env.FETCH_PROGRESS_FAILED_LIMIT || 100);
+
 // Track fetch progress for range fetching
 const fetchProgress = {
   isRunning: false,
   current: 0,
   total: 0,
-  completed: [],
+  completedCount: 0,
   failed: [],
+  failedCount: 0,
   lastError: null,
+  startedAt: null,
+  finishedAt: null,
 };
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function pushFailed(errorEntry) {
+  if (fetchProgress.failed.length >= FETCH_PROGRESS_FAILED_LIMIT) {
+    fetchProgress.failed.shift();
+  }
+  fetchProgress.failed.push(errorEntry);
+}
 
 /**
  * GET /api/battles
@@ -83,13 +101,21 @@ router.post("/player-details", async (req, res) => {
 router.post("/fetch", async (req, res) => {
   try {
     const { battleId, apiKey } = req.body;
+    const parsedBattleId = Number(battleId);
 
-    if (!battleId) {
-      return res.status(400).json({ success: false, error: "battleId is required" });
+    if (!Number.isInteger(parsedBattleId) || parsedBattleId <= 0) {
+      return res.status(400).json({ success: false, error: "battleId must be a positive integer" });
     }
 
-    console.log(`Fetching battle ${battleId} from API...`);
-    const battle = await fetchAndSaveBattle(battleId, apiKey);
+    if (fetchProgress.isRunning) {
+      return res.status(409).json({
+        success: false,
+        error: "Range fetch is in progress. Wait until it finishes to run single fetch.",
+      });
+    }
+
+    console.log(`Fetching battle ${parsedBattleId} from API...`);
+    const battle = await fetchAndSaveBattle(parsedBattleId, apiKey);
 
     res.json({ success: true, data: battle, message: "Battle fetched and saved successfully" });
   } catch (error) {
@@ -108,13 +134,23 @@ router.post("/fetch", async (req, res) => {
 router.post("/fetch-range", async (req, res) => {
   try {
     const { fromId, toId, apiKey } = req.body;
+    const parsedFromId = Number(fromId);
+    const parsedToId = Number(toId);
 
-    if (!fromId || !toId) {
-      return res.status(400).json({ success: false, error: "fromId and toId are required" });
+    if (!Number.isInteger(parsedFromId) || !Number.isInteger(parsedToId) || parsedFromId <= 0 || parsedToId <= 0) {
+      return res.status(400).json({ success: false, error: "fromId and toId must be positive integers" });
     }
 
-    if (fromId > toId) {
+    if (parsedFromId > parsedToId) {
       return res.status(400).json({ success: false, error: "fromId must be less than or equal to toId" });
+    }
+
+    const total = parsedToId - parsedFromId + 1;
+    if (total > FETCH_RANGE_MAX_BATTLES) {
+      return res.status(400).json({
+        success: false,
+        error: `Range too large. Max ${FETCH_RANGE_MAX_BATTLES} battles per request`,
+      });
     }
 
     if (fetchProgress.isRunning) {
@@ -124,38 +160,56 @@ router.post("/fetch-range", async (req, res) => {
     // Reset progress
     fetchProgress.isRunning = true;
     fetchProgress.current = 0;
-    fetchProgress.total = toId - fromId + 1;
-    fetchProgress.completed = [];
+    fetchProgress.total = total;
+    fetchProgress.completedCount = 0;
     fetchProgress.failed = [];
+    fetchProgress.failedCount = 0;
     fetchProgress.lastError = null;
+    fetchProgress.startedAt = new Date().toISOString();
+    fetchProgress.finishedAt = null;
 
     // Start fetching in background
     (async () => {
-      for (let battleId = fromId; battleId <= toId; battleId++) {
-        fetchProgress.current = battleId - fromId + 1;
+      for (let battleId = parsedFromId; battleId <= parsedToId; battleId++) {
+        fetchProgress.current = battleId - parsedFromId + 1;
         try {
-          console.log(`Fetching battle ${battleId} (${fetchProgress.current}/${fetchProgress.total})...`);
+          if (fetchProgress.current === 1 || fetchProgress.current % 10 === 0 || fetchProgress.current === total) {
+            console.log(`Fetching battle ${battleId} (${fetchProgress.current}/${fetchProgress.total})...`);
+          }
           await fetchAndSaveBattle(battleId, apiKey);
-          fetchProgress.completed.push(battleId);
+          fetchProgress.completedCount += 1;
         } catch (error) {
           console.log(`Failed to fetch battle ${battleId}:`, error.message);
-          fetchProgress.failed.push({ id: battleId, error: error.message });
+          fetchProgress.failedCount += 1;
+          pushFailed({ id: battleId, error: error.message });
           fetchProgress.lastError = error.message;
         }
+
+        if (FETCH_RANGE_DELAY_MS > 0 && battleId < parsedToId) {
+          await sleep(FETCH_RANGE_DELAY_MS);
+        }
       }
+
       fetchProgress.isRunning = false;
+      fetchProgress.finishedAt = new Date().toISOString();
       console.log(
-        `Range fetch completed. Success: ${fetchProgress.completed.length}, Failed: ${fetchProgress.failed.length}`,
+        `Range fetch completed. Success: ${fetchProgress.completedCount}, Failed: ${fetchProgress.failedCount}`,
       );
-    })();
+    })().catch((error) => {
+      fetchProgress.isRunning = false;
+      fetchProgress.lastError = error.message;
+      fetchProgress.finishedAt = new Date().toISOString();
+      console.log("Range fetch crashed:", error.message);
+    });
 
     res.json({
       success: true,
-      message: `Started fetching battles from ${fromId} to ${toId} (${fetchProgress.total} battles)`,
+      message: `Started fetching battles from ${parsedFromId} to ${parsedToId} (${fetchProgress.total} battles, delay ${FETCH_RANGE_DELAY_MS}ms)`,
     });
   } catch (error) {
     console.log("Error starting range fetch:", error.message);
     fetchProgress.isRunning = false;
+    fetchProgress.finishedAt = new Date().toISOString();
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -171,10 +225,12 @@ router.get("/fetch-progress", (req, res) => {
       isRunning: fetchProgress.isRunning,
       current: fetchProgress.current,
       total: fetchProgress.total,
-      completedCount: fetchProgress.completed.length,
-      failedCount: fetchProgress.failed.length,
+      completedCount: fetchProgress.completedCount,
+      failedCount: fetchProgress.failedCount,
       failed: fetchProgress.failed,
       lastError: fetchProgress.lastError,
+      startedAt: fetchProgress.startedAt,
+      finishedAt: fetchProgress.finishedAt,
     },
   });
 });

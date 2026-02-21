@@ -2,6 +2,8 @@ import pool from "../config/database.js";
 import { fetchWars, fetchWarRounds, fetchRoundHits, fetchAccount } from "./eclesiarApi.js";
 import { getItemName } from "../config/itemMapping.js";
 
+const BATTLE_FETCH_DEBUG = String(process.env.BATTLE_FETCH_DEBUG || "false").toLowerCase() === "true";
+
 function extractHeroId(hero) {
   if (!hero) {
     return null;
@@ -124,8 +126,10 @@ export async function fetchAndSaveBattle(battleId, apiKey) {
   // Fetch war details
   const warsResponse = await fetchWars({ war_id: battleId }, apiKey);
 
-  // Debug: log the response structure
-  console.log(`API response for war ${battleId}:`, JSON.stringify(warsResponse, null, 2));
+  if (BATTLE_FETCH_DEBUG) {
+    // Full payload logging is expensive - keep it behind explicit debug flag
+    console.log(`API response for war ${battleId}:`, JSON.stringify(warsResponse, null, 2));
+  }
 
   // Handle both array and single object responses
   let war;
