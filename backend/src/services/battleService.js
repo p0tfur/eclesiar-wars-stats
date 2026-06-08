@@ -275,6 +275,178 @@ export async function fetchAndSaveBattle(battleId, apiKey) {
 }
 
 /**
+ * Fetch and save only the current round for a battle.
+ * This is intended for live battle polling where re-fetching every round is too expensive.
+ * @param {number} battleId - Battle/War ID
+ * @param {string} apiKey - Optional API key
+ * @returns {Promise<Object>} - Live refresh result
+ */
+export async function fetchAndSaveCurrentRound(battleId, apiKey) {
+  const warsResponse = await fetchWars({ war_id: battleId }, apiKey);
+
+  let war;
+  if (Array.isArray(warsResponse)) {
+    if (warsResponse.length === 0) {
+      throw new Error("Battle not found");
+    }
+    war = warsResponse[0];
+  } else if (warsResponse && typeof warsResponse === "object") {
+    war = warsResponse;
+  } else {
+    throw new Error("Invalid API response format");
+  }
+
+  if (!war?.id) {
+    throw new Error("Battle data is missing required fields");
+  }
+  if (!war.attackers?.id) {
+    throw new Error("Battle attackers data is missing");
+  }
+  if (!war.defenders?.id) {
+    throw new Error("Battle defenders data is missing");
+  }
+
+  const rounds = await fetchWarRounds(battleId, apiKey);
+  if (!rounds.length) {
+    throw new Error("Battle rounds not found");
+  }
+
+  const lastRound = rounds[rounds.length - 1] || null;
+  const battleEndDate = lastRound?.end_date || null;
+
+  if (war.region?.name === "Stadium") {
+    console.log(`Skipping live save for battle ${battleId} because region_name is Stadium`);
+    return { battle: war, skipped: true, reason: "Stadium battle" };
+  }
+
+  await cacheCountry(war.attackers.id, war.attackers.name, war.attackers.avatar);
+  await cacheCountry(war.defenders.id, war.defenders.name, war.defenders.avatar);
+
+  await pool.query(
+    `
+    INSERT INTO battles (id, attacker_id, attacker_name, attacker_avatar,
+                         defender_id, defender_name, defender_avatar,
+                         region_id, region_name, attackers_score, defenders_score, is_revolution, end_date)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+      attacker_name = VALUES(attacker_name),
+      attacker_avatar = VALUES(attacker_avatar),
+      defender_name = VALUES(defender_name),
+      defender_avatar = VALUES(defender_avatar),
+      attackers_score = VALUES(attackers_score),
+      defenders_score = VALUES(defenders_score),
+      end_date = VALUES(end_date),
+      fetched_at = CURRENT_TIMESTAMP
+  `,
+    [
+      war.id,
+      war.attackers.id,
+      war.attackers.name,
+      war.attackers.avatar,
+      war.defenders.id,
+      war.defenders.name,
+      war.defenders.avatar,
+      war.region?.id,
+      war.region?.name,
+      war.attackers_score,
+      war.defenders_score,
+      war.flags?.is_revolution || 0,
+      battleEndDate,
+    ],
+  );
+
+  for (const round of rounds) {
+    await pool.query(
+      `
+      INSERT INTO rounds (id, battle_id, end_date, attackers_score, defenders_score,
+                          attackers_points, defenders_points, attackers_hero, defenders_hero)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        attackers_score = VALUES(attackers_score),
+        defenders_score = VALUES(defenders_score),
+        attackers_points = VALUES(attackers_points),
+        defenders_points = VALUES(defenders_points),
+        attackers_hero = VALUES(attackers_hero),
+        defenders_hero = VALUES(defenders_hero),
+        fetched_at = CURRENT_TIMESTAMP
+    `,
+      [
+        round.id,
+        battleId,
+        round.end_date,
+        round.attackers_score,
+        round.defenders_score,
+        round.attackers_points,
+        round.defenders_points,
+        extractHeroId(round.attackers_hero),
+        extractHeroId(round.defenders_hero),
+      ],
+    );
+  }
+
+  const currentRoundId = Number(war.current_round_id);
+  const currentRound =
+    rounds.find((round) => Number(round.id) === currentRoundId) ||
+    rounds.find((round) => Number(round.id) === Number(war.current_round?.id)) ||
+    lastRound;
+
+  if (!currentRound?.id) {
+    throw new Error("Current round not found");
+  }
+
+  const currentRoundIndex = rounds.findIndex((round) => Number(round.id) === Number(currentRound.id));
+  const roundsToRefresh = [rounds[currentRoundIndex - 1], currentRound].filter(Boolean);
+  const refreshedRoundIds = [];
+  let totalHitsCount = 0;
+
+  for (const roundToRefresh of roundsToRefresh) {
+    const hits = await fetchRoundHits(roundToRefresh.id, apiKey);
+    console.log(`Live refresh fetched ${hits.length} hits for battle ${battleId}, round ${roundToRefresh.id}`);
+
+    await pool.query("DELETE FROM hits WHERE round_id = ?", [roundToRefresh.id]);
+    refreshedRoundIds.push(roundToRefresh.id);
+    totalHitsCount += hits.length;
+
+    if (hits.length > 0) {
+      const hitValues = hits
+        .filter((hit) => hit?.fighter?.id)
+        .map((hit) => [
+          roundToRefresh.id,
+          hit.fighter.id,
+          hit.fighter.type,
+          hit.damage,
+          normalizeHitSide(hit.side),
+          hit.item_id,
+          hit.created_at,
+        ]);
+
+      if (hitValues.length > 0) {
+        await pool.query(
+          `
+          INSERT INTO hits (round_id, fighter_id, fighter_type, damage, side, item_id, created_at)
+          VALUES ?
+        `,
+          [hitValues],
+        );
+
+        const uniqueFighterIds = [...new Set(hitValues.map((hit) => hit[1]))];
+        await cachePlayerInfo(uniqueFighterIds, apiKey);
+      }
+    }
+  }
+
+  return {
+    battleId,
+    currentRoundId: currentRound.id,
+    currentRoundNumber: war.current_round_number || null,
+    refreshedRoundIds,
+    roundsCount: rounds.length,
+    hitsCount: totalHitsCount,
+    refreshedAt: new Date().toISOString(),
+  };
+}
+
+/**
  * Cache player info from API (including nationality_id)
  * @param {Array<number>} playerIds - List of player IDs
  * @param {string} apiKey - API key for requests
@@ -705,6 +877,72 @@ export async function getWarSummary(battleIds) {
 
   console.log("Summary rows returned:", summaryRows.length);
   return summaryRows;
+}
+
+/**
+ * Get player hit totals for a UTC server day using hit timestamps.
+ * @param {string} dateKey - UTC date in YYYY-MM-DD format
+ * @returns {Promise<{ date: string, battleIds: number[], players: Array }>}
+ */
+export async function getDailyHitSummary(dateKey) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || ""))) {
+    throw new Error("date must be in YYYY-MM-DD format");
+  }
+
+  const start = `${dateKey} 00:00:00`;
+  const nextDate = new Date(`${dateKey}T00:00:00Z`);
+  nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+  const end = nextDate.toISOString().slice(0, 10) + " 00:00:00";
+
+  const [battleRows] = await pool.query(
+    `
+    SELECT DISTINCT r.battle_id
+    FROM hits h
+    JOIN rounds r ON h.round_id = r.id
+    WHERE h.created_at >= ? AND h.created_at < ?
+    ORDER BY r.battle_id
+    `,
+    [start, end],
+  );
+
+  const [rows] = await pool.query(
+    `
+    SELECT
+      h.fighter_id,
+      p.name as player_name,
+      p.avatar as player_avatar,
+      p.nationality_id,
+      c.name as country_name,
+      c.avatar as country_avatar,
+      SUM(h.damage) as total_damage,
+      COUNT(*) as hit_count,
+      COUNT(DISTINCT r.battle_id) as battle_count
+    FROM hits h
+    JOIN rounds r ON h.round_id = r.id
+    LEFT JOIN players p ON h.fighter_id = p.id
+    LEFT JOIN countries c ON p.nationality_id = c.id
+    WHERE h.created_at >= ? AND h.created_at < ?
+    GROUP BY h.fighter_id, p.name, p.avatar, p.nationality_id, c.name, c.avatar
+    ORDER BY hit_count DESC, total_damage DESC
+    `,
+    [start, end],
+  );
+
+  return {
+    date: dateKey,
+    battleIds: battleRows.map((row) => row.battle_id),
+    players: rows.map((row) => ({
+      fighter_id: row.fighter_id,
+      player_name: row.player_name,
+      player_avatar: row.player_avatar,
+      nationality_id: row.nationality_id,
+      country_name: row.country_name,
+      country_avatar: row.country_avatar,
+      total_damage: Number(row.total_damage) || 0,
+      hit_count: Number(row.hit_count) || 0,
+      battle_count: Number(row.battle_count) || 0,
+    })),
+  };
 }
 
 /**

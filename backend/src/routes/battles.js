@@ -2,7 +2,9 @@ import express from "express";
 import {
   getAllBattles,
   fetchAndSaveBattle,
+  fetchAndSaveCurrentRound,
   getWarSummary,
+  getDailyHitSummary,
   getPlayerBattleDetails,
   deleteBattle,
   backfillRoundHeroes,
@@ -121,6 +123,38 @@ router.post("/fetch", async (req, res) => {
   } catch (error) {
     // Log full error stack for debugging
     console.log("Error fetching battle:", error.message);
+    console.log("Stack:", error.stack);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/battles/fetch-current-round
+ * Fetch only the current round for live battle updates
+ * Body: { battleId: number, apiKey?: string }
+ */
+router.post("/fetch-current-round", async (req, res) => {
+  try {
+    const { battleId, apiKey } = req.body;
+    const parsedBattleId = Number(battleId);
+
+    if (!Number.isInteger(parsedBattleId) || parsedBattleId <= 0) {
+      return res.status(400).json({ success: false, error: "battleId must be a positive integer" });
+    }
+
+    if (fetchProgress.isRunning) {
+      return res.status(409).json({
+        success: false,
+        error: "Range fetch is in progress. Wait until it finishes to run live round fetch.",
+      });
+    }
+
+    console.log(`Live refreshing current round for battle ${parsedBattleId}...`);
+    const result = await fetchAndSaveCurrentRound(parsedBattleId, apiKey);
+
+    res.json({ success: true, data: result, message: "Current round fetched and saved successfully" });
+  } catch (error) {
+    console.log("Error fetching current round:", error.message);
     console.log("Stack:", error.stack);
     res.status(500).json({ success: false, error: error.message });
   }
@@ -252,6 +286,28 @@ router.post("/summary", async (req, res) => {
     res.json({ success: true, data: summary });
   } catch (error) {
     console.log("Error getting summary:", error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/battles/daily-summary
+ * Get player hit totals for a UTC server day based on hit timestamps
+ * Body: { date: "YYYY-MM-DD" }
+ */
+router.post("/daily-summary", async (req, res) => {
+  try {
+    const { date } = req.body || {};
+    const dateKey = String(date || "").trim();
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+      return res.status(400).json({ success: false, error: "date must be in YYYY-MM-DD format" });
+    }
+
+    const summary = await getDailyHitSummary(dateKey);
+    res.json({ success: true, data: summary });
+  } catch (error) {
+    console.log("Error getting daily summary:", error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });
