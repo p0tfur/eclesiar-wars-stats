@@ -47,7 +47,8 @@ CREATE TABLE hits (
     created_at DATETIME,
     FOREIGN KEY (round_id) REFERENCES rounds(id) ON DELETE CASCADE,
     INDEX idx_round_fighter (round_id, fighter_id),
-    INDEX idx_fighter (fighter_id)
+    INDEX idx_fighter (fighter_id),
+    INDEX idx_hits_created_round_fighter (created_at, round_id, fighter_id)
 );
 
 -- Tabela graczy (cache nazw)

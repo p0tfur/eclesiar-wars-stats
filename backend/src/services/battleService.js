@@ -894,17 +894,6 @@ export async function getDailyHitSummary(dateKey) {
   nextDate.setUTCDate(nextDate.getUTCDate() + 1);
   const end = nextDate.toISOString().slice(0, 10) + " 00:00:00";
 
-  const [battleRows] = await pool.query(
-    `
-    SELECT DISTINCT r.battle_id
-    FROM hits h
-    JOIN rounds r ON h.round_id = r.id
-    WHERE h.created_at >= ? AND h.created_at < ?
-    ORDER BY r.battle_id
-    `,
-    [start, end],
-  );
-
   const [rows] = await pool.query(
     `
     SELECT
@@ -916,7 +905,8 @@ export async function getDailyHitSummary(dateKey) {
       c.avatar as country_avatar,
       SUM(h.damage) as total_damage,
       COUNT(*) as hit_count,
-      COUNT(DISTINCT r.battle_id) as battle_count
+      COUNT(DISTINCT r.battle_id) as battle_count,
+      GROUP_CONCAT(DISTINCT r.battle_id ORDER BY r.battle_id) as battle_ids
     FROM hits h
     JOIN rounds r ON h.round_id = r.id
     LEFT JOIN players p ON h.fighter_id = p.id
@@ -928,9 +918,18 @@ export async function getDailyHitSummary(dateKey) {
     [start, end],
   );
 
+  const battleIdSet = new Set();
+  rows.forEach((row) => {
+    String(row.battle_ids || "")
+      .split(",")
+      .map((id) => Number(id))
+      .filter((id) => Number.isInteger(id) && id > 0)
+      .forEach((id) => battleIdSet.add(id));
+  });
+
   return {
     date: dateKey,
-    battleIds: battleRows.map((row) => row.battle_id),
+    battleIds: [...battleIdSet].sort((a, b) => a - b),
     players: rows.map((row) => ({
       fighter_id: row.fighter_id,
       player_name: row.player_name,
