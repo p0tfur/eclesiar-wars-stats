@@ -5,6 +5,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { testConnection } from "./config/database.js";
 import battlesRouter from "./routes/battles.js";
+import { startBattleAutoSync } from "./services/battleAutoSync.js";
 
 dotenv.config();
 
@@ -65,6 +66,7 @@ async function start() {
 
   app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    startBattleAutoSync();
   });
 }
 

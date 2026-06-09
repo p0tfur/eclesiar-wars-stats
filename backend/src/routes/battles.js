@@ -9,6 +9,7 @@ import {
   deleteBattle,
   backfillRoundHeroes,
 } from "../services/battleService.js";
+import { getBattleAutoSyncStatus, runBattleAutoSyncOnce } from "../services/battleAutoSync.js";
 
 const router = express.Router();
 
@@ -267,6 +268,29 @@ router.get("/fetch-progress", (req, res) => {
       finishedAt: fetchProgress.finishedAt,
     },
   });
+});
+
+/**
+ * GET /api/battles/auto-sync/status
+ * Get background battle auto-sync status
+ */
+router.get("/auto-sync/status", (req, res) => {
+  res.json({ success: true, data: getBattleAutoSyncStatus() });
+});
+
+/**
+ * POST /api/battles/auto-sync/run
+ * Run one background battle auto-sync tick immediately
+ * Body: { apiKey?: string }
+ */
+router.post("/auto-sync/run", async (req, res) => {
+  try {
+    const result = await runBattleAutoSyncOnce({ apiKey: req.body?.apiKey });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.log("Error running battle auto sync:", error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 /**
