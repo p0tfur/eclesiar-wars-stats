@@ -3,6 +3,7 @@ import { fetchWars, fetchWarRounds, fetchRoundHits, fetchAccount } from "./ecles
 import { getItemName } from "../config/itemMapping.js";
 
 const BATTLE_FETCH_DEBUG = String(process.env.BATTLE_FETCH_DEBUG || "false").toLowerCase() === "true";
+const LIVE_REFRESH_ROUNDS_WINDOW = Math.max(1, Number(process.env.WARS_LIVE_REFRESH_ROUNDS_WINDOW || 3));
 
 function extractHeroId(hero) {
   if (!hero) {
@@ -395,7 +396,8 @@ export async function fetchAndSaveCurrentRound(battleId, apiKey) {
   }
 
   const currentRoundIndex = rounds.findIndex((round) => Number(round.id) === Number(currentRound.id));
-  const roundsToRefresh = [rounds[currentRoundIndex - 1], currentRound].filter(Boolean);
+  const roundsWindowStart = Math.max(0, currentRoundIndex - (LIVE_REFRESH_ROUNDS_WINDOW - 1));
+  const roundsToRefresh = rounds.slice(roundsWindowStart, currentRoundIndex + 1).filter(Boolean);
   const refreshedRoundIds = [];
   let totalHitsCount = 0;
 

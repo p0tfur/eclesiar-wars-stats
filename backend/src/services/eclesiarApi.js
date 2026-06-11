@@ -10,10 +10,12 @@ const API_KEY = process.env.ECLESIAR_API_KEY;
 const REQUEST_DELAY_MS = 50; // Delay between requests (ms)
 const MAX_RETRIES = 5;
 const RETRY_DELAY_MS = 1000; // Initial retry delay (doubles each retry)
+const API_TIMEOUT_MS = Math.max(60000, Number(process.env.ECLESIAR_API_TIMEOUT_MS || 300000));
 
 // Create axios instance (auth header added per-request to support user-provided keys)
 const apiClient = axios.create({
   baseURL: API_URL,
+  timeout: API_TIMEOUT_MS,
 });
 
 /**
@@ -37,6 +39,35 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function shouldRetryRequest(error) {
+  const status = error.response?.status;
+  const code = error.code;
+
+  if (status === 408 || status === 429) {
+    return true;
+  }
+
+  if (typeof status === "number" && status >= 500) {
+    return true;
+  }
+
+  return code === "ECONNABORTED" || code === "ETIMEDOUT";
+}
+
+function getRetryReason(error) {
+  const status = error.response?.status;
+
+  if (status) {
+    return `HTTP ${status}`;
+  }
+
+  if (error.code === "ECONNABORTED" || error.code === "ETIMEDOUT") {
+    return `timeout after ${API_TIMEOUT_MS}ms`;
+  }
+
+  return error.message || "request failed";
+}
+
 /**
  * Make API request with retry logic for rate limiting
  * @param {Function} requestFn - Function that returns axios promise
@@ -56,12 +87,13 @@ async function requestWithRetry(requestFn, description = "API request") {
     } catch (error) {
       lastError = error;
 
-      if (error.response?.status === 429) {
+      if (shouldRetryRequest(error) && attempt < MAX_RETRIES) {
         const retryDelay = RETRY_DELAY_MS * Math.pow(2, attempt - 1);
-        console.log(`${description}: Rate limited (429), retry ${attempt}/${MAX_RETRIES} in ${retryDelay}ms...`);
+        console.log(
+          `${description}: ${getRetryReason(error)}, retry ${attempt}/${MAX_RETRIES} in ${retryDelay}ms...`,
+        );
         await sleep(retryDelay);
       } else {
-        // Non-rate-limit error, don't retry
         throw error;
       }
     }

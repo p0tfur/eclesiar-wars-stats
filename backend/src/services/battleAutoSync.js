@@ -4,7 +4,8 @@ import { fetchAndSaveBattle, fetchAndSaveCurrentRound } from "./battleService.js
 
 const enabled = String(process.env.WARS_AUTO_SYNC_ENABLED || "false").toLowerCase() === "true";
 const intervalMs = Math.max(10000, Number(process.env.WARS_AUTO_SYNC_INTERVAL_MS || 60000));
-const listLimit = Math.max(1, Number(process.env.WARS_AUTO_SYNC_LIST_LIMIT || 20));
+const listLimit = Math.max(1, Number(process.env.WARS_AUTO_SYNC_LIST_LIMIT || 100));
+const listPageLimit = Math.max(1, Number(process.env.WARS_AUTO_SYNC_LIST_PAGE_LIMIT || 10));
 const delayMs = Math.max(0, Number(process.env.WARS_AUTO_SYNC_DELAY_MS || 500));
 const includeExpired = String(process.env.WARS_AUTO_SYNC_INCLUDE_EXPIRED || "true").toLowerCase() !== "false";
 const fullFetchCompleted = String(process.env.WARS_AUTO_SYNC_FULL_FETCH_COMPLETED || "true").toLowerCase() !== "false";
@@ -23,6 +24,7 @@ const status = {
   config: {
     intervalMs,
     listLimit,
+    listPageLimit,
     delayMs,
     includeExpired,
     fullFetchCompleted,
@@ -68,6 +70,26 @@ function hasCompleteDbStats(battle) {
   return !!battle && Number(battle.rounds_count) >= 9 && Number(battle.hits_count) > 0;
 }
 
+async function fetchWarsUntilLimit(params, expired, apiKey) {
+  const collectedWars = [];
+
+  for (let page = 1; page <= listPageLimit && collectedWars.length < listLimit; page++) {
+    const pageWars = normalizeWarsResponse(await fetchWars({ ...params, page }, apiKey));
+
+    if (!pageWars.length) {
+      break;
+    }
+
+    collectedWars.push(...markWars(pageWars, expired));
+
+    if (pageWars.length === 1 && Number(pageWars[0]?.id) === Number(params?.war_id)) {
+      break;
+    }
+  }
+
+  return collectedWars;
+}
+
 async function getDbStatsByBattleId(battleIds) {
   if (!battleIds.length) {
     return new Map();
@@ -92,14 +114,14 @@ async function getDbStatsByBattleId(battleIds) {
 }
 
 async function fetchRecentWars(apiKey) {
-  const activeWars = markWars(normalizeWarsResponse(await fetchWars({ expired: 0, page: 1 }, apiKey)), false);
+  const activeWars = await fetchWarsUntilLimit({ expired: 0 }, false, apiKey);
 
   if (!includeExpired) {
     return uniqueWars([activeWars]);
   }
 
   try {
-    const expiredWars = markWars(normalizeWarsResponse(await fetchWars({ expired: 1, page: 1 }, apiKey)), true);
+    const expiredWars = await fetchWarsUntilLimit({ expired: 1 }, true, apiKey);
     return uniqueWars([activeWars, expiredWars]);
   } catch (error) {
     console.log("WARS auto sync could not fetch expired wars:", error.message);
@@ -157,11 +179,13 @@ export async function runBattleAutoSyncOnce(options = {}) {
     fullFetched: 0,
     skipped: 0,
     failed: 0,
+    warsDiscovered: 0,
     errors: [],
   };
 
   try {
     const wars = await fetchRecentWars(apiKey);
+    result.warsDiscovered = wars.length;
     const battleIds = wars.map((war) => Number(war.id)).filter((id) => Number.isInteger(id) && id > 0);
     const dbStats = await getDbStatsByBattleId(battleIds);
 

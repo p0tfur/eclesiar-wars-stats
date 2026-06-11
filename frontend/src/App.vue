@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import {
   getBattles,
   fetchBattle,
+  fetchCurrentRound,
   fetchBattleRange,
   getFetchProgress,
   getWarSummary,
@@ -185,7 +186,14 @@ async function refreshBattle(battleId) {
 
   try {
     console.log(`Refreshing battle ${battleId}...`);
-    await fetchBattle(battleId, userApiKey.value || undefined);
+    const battle = battles.value.find((entry) => Number(entry.id) === Number(battleId));
+
+    if (battle && isBattleIncomplete(battle)) {
+      await fetchCurrentRound(battleId, userApiKey.value || undefined);
+    } else {
+      await fetchBattle(battleId, userApiKey.value || undefined);
+    }
+
     // Reload battles list to get updated data
     await loadBattles();
   } catch (err) {

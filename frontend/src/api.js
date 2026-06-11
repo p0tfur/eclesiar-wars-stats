@@ -3,7 +3,7 @@ import axios from "axios";
 // API base URL - uses Vite proxy in development
 const api = axios.create({
   baseURL: "/api",
-  timeout: 120000, // 60 seconds timeout for fetching battles
+  timeout: 300000, // 5 minutes timeout for fetching battles
 });
 
 /**
@@ -23,6 +23,11 @@ export async function getBattles() {
  */
 export async function fetchBattle(battleId, apiKey) {
   const response = await api.post("/battles/fetch", { battleId, apiKey });
+  return response.data;
+}
+
+export async function fetchCurrentRound(battleId, apiKey) {
+  const response = await api.post("/battles/fetch-current-round", { battleId, apiKey });
   return response.data;
 }
 

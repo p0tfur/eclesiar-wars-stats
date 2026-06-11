@@ -17,3 +17,4 @@
 - 2026-01-25: Dodano sumy kolumn (DMG/BH/Hits) w tabeli modalu szczegółów gracza.
 - 2026-01-25: Naprawiono sumy w modalu szczegółów gracza (jawne rzutowanie na liczby).
 - 2026-01-25: Usunięto backfill hero z interfejsu (FetchControls/App/api).
+- 2026-06-11: Wydłużono timeouty żądań w wars, rozszerzono retry backendu i poprawiono auto-sync/live refresh dla dużej liczby aktywnych wojen (multi-page scan + odświeżanie okna ostatnich rund).
