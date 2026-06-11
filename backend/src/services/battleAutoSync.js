@@ -9,6 +9,7 @@ const listPageLimit = Math.max(1, Number(process.env.WARS_AUTO_SYNC_LIST_PAGE_LI
 const delayMs = Math.max(0, Number(process.env.WARS_AUTO_SYNC_DELAY_MS || 500));
 const includeExpired = String(process.env.WARS_AUTO_SYNC_INCLUDE_EXPIRED || "true").toLowerCase() !== "false";
 const fullFetchCompleted = String(process.env.WARS_AUTO_SYNC_FULL_FETCH_COMPLETED || "true").toLowerCase() !== "false";
+const fullFetchActiveIntervalMs = Math.max(0, Number(process.env.WARS_AUTO_SYNC_FULL_FETCH_ACTIVE_INTERVAL_MS || 900000));
 
 let timerId = null;
 
@@ -20,6 +21,7 @@ const status = {
   lastFinishedAt: null,
   lastError: null,
   currentBattleId: null,
+  lastActiveFullFetchAt: null,
   lastResult: null,
   config: {
     intervalMs,
@@ -28,6 +30,7 @@ const status = {
     delayMs,
     includeExpired,
     fullFetchCompleted,
+    fullFetchActiveIntervalMs,
   },
 };
 
@@ -68,6 +71,23 @@ function isCompleteWarPayload(war) {
 
 function hasCompleteDbStats(battle) {
   return !!battle && Number(battle.rounds_count) >= 9 && Number(battle.hits_count) > 0;
+}
+
+function shouldRunActiveFullFetch(options = {}) {
+  if (options.forceActiveFullFetch) {
+    return true;
+  }
+
+  if (fullFetchActiveIntervalMs <= 0) {
+    return false;
+  }
+
+  if (!status.lastActiveFullFetchAt) {
+    return true;
+  }
+
+  const elapsedMs = Date.now() - new Date(status.lastActiveFullFetchAt).getTime();
+  return elapsedMs >= fullFetchActiveIntervalMs;
 }
 
 async function fetchWarsUntilLimit(params, expired, apiKey) {
@@ -129,11 +149,12 @@ async function fetchRecentWars(apiKey) {
   }
 }
 
-async function syncWar(war, dbStats, apiKey) {
+async function syncWar(war, dbStats, apiKey, options = {}) {
   const battleId = Number(war.id);
   const dbBattle = dbStats.get(battleId);
   const completeInApi = isCompleteWarPayload(war);
   const completeInDb = hasCompleteDbStats(dbBattle);
+  const shouldFullFetchActive = options.fullFetchActive === true;
 
   if (completeInApi) {
     if (!fullFetchCompleted || completeInDb) {
@@ -142,6 +163,11 @@ async function syncWar(war, dbStats, apiKey) {
 
     await fetchAndSaveBattle(battleId, apiKey);
     return { battleId, action: "fetch-full", completeInDb };
+  }
+
+  if (shouldFullFetchActive) {
+    await fetchAndSaveBattle(battleId, apiKey);
+    return { battleId, action: "fetch-full-active", completeInDb };
   }
 
   await fetchAndSaveCurrentRound(battleId, apiKey);
@@ -177,14 +203,18 @@ export async function runBattleAutoSyncOnce(options = {}) {
     checked: 0,
     currentRoundFetched: 0,
     fullFetched: 0,
+    activeFullFetched: 0,
     skipped: 0,
     failed: 0,
     warsDiscovered: 0,
+    activeFullRefreshTriggered: false,
     errors: [],
   };
 
   try {
     const wars = await fetchRecentWars(apiKey);
+    const fullFetchActive = shouldRunActiveFullFetch(options);
+    result.activeFullRefreshTriggered = fullFetchActive;
     result.warsDiscovered = wars.length;
     const battleIds = wars.map((war) => Number(war.id)).filter((id) => Number.isInteger(id) && id > 0);
     const dbStats = await getDbStatsByBattleId(battleIds);
@@ -195,10 +225,12 @@ export async function runBattleAutoSyncOnce(options = {}) {
       result.checked += 1;
 
       try {
-        const syncResult = await syncWar(war, dbStats, apiKey);
+        const syncResult = await syncWar(war, dbStats, apiKey, { fullFetchActive });
 
         if (syncResult.action === "fetch-current-round") {
           result.currentRoundFetched += 1;
+        } else if (syncResult.action === "fetch-full-active") {
+          result.activeFullFetched += 1;
         } else if (syncResult.action === "fetch-full") {
           result.fullFetched += 1;
         } else {
@@ -213,6 +245,10 @@ export async function runBattleAutoSyncOnce(options = {}) {
       if (delayMs > 0) {
         await sleep(delayMs);
       }
+    }
+
+    if (fullFetchActive) {
+      status.lastActiveFullFetchAt = new Date().toISOString();
     }
 
     status.lastResult = result;
@@ -250,7 +286,7 @@ export function startBattleAutoSync() {
     });
   };
 
-  console.log(`WARS auto sync enabled. Interval: ${intervalMs}ms, list limit: ${listLimit}.`);
+  console.log(`WARS auto sync enabled. Interval: ${intervalMs}ms, list limit: ${listLimit}, active full refresh interval: ${fullFetchActiveIntervalMs}ms.`);
   runTick();
   timerId = setInterval(runTick, intervalMs);
 }
