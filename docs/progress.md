@@ -19,3 +19,4 @@
 - 2026-01-25: Usunięto backfill hero z interfejsu (FetchControls/App/api).
 - 2026-06-11: Wydłużono timeouty żądań w wars, rozszerzono retry backendu i poprawiono auto-sync/live refresh dla dużej liczby aktywnych wojen (multi-page scan + odświeżanie okna ostatnich rund).
 - 2026-06-11: Dodano okresowy pełny refresh aktywnych bitew w backendowym auto-sync WARS (domyślnie co 15 minut), żeby bieżące wojny były dociągane na bieżąco zamiast nadrabiania dużych braków naraz.
+- 2026-06-11: Dodano czytelne logi ticków backendowego auto-sync WARS (start, zakończenie i informacja o pełnym refreshu aktywnych bitew), żeby było widać, czy dane dociągają się samoczynnie.

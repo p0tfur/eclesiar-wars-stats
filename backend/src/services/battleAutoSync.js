@@ -90,6 +90,10 @@ function shouldRunActiveFullFetch(options = {}) {
   return elapsedMs >= fullFetchActiveIntervalMs;
 }
 
+function formatSyncSummary(result) {
+  return `checked=${result.checked}, currentRoundFetched=${result.currentRoundFetched}, activeFullFetched=${result.activeFullFetched}, fullFetched=${result.fullFetched}, skipped=${result.skipped}, failed=${result.failed}, warsDiscovered=${result.warsDiscovered}, activeFullRefreshTriggered=${result.activeFullRefreshTriggered}`;
+}
+
 async function fetchWarsUntilLimit(params, expired, apiKey) {
   const collectedWars = [];
 
@@ -215,6 +219,10 @@ export async function runBattleAutoSyncOnce(options = {}) {
     const wars = await fetchRecentWars(apiKey);
     const fullFetchActive = shouldRunActiveFullFetch(options);
     result.activeFullRefreshTriggered = fullFetchActive;
+    console.log(`WARS auto sync tick #${status.tickCount} started. activeFullRefreshTriggered=${fullFetchActive}.`);
+    if (fullFetchActive) {
+      console.log(`WARS auto sync tick #${status.tickCount} is running full refresh for active wars. Interval=${fullFetchActiveIntervalMs}ms.`);
+    }
     result.warsDiscovered = wars.length;
     const battleIds = wars.map((war) => Number(war.id)).filter((id) => Number.isInteger(id) && id > 0);
     const dbStats = await getDbStatsByBattleId(battleIds);
@@ -252,6 +260,7 @@ export async function runBattleAutoSyncOnce(options = {}) {
     }
 
     status.lastResult = result;
+    console.log(`WARS auto sync tick #${status.tickCount} completed: ${formatSyncSummary(result)}.`);
     return result;
   } catch (error) {
     status.lastError = error.message;
