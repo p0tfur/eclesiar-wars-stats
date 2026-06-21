@@ -31,6 +31,18 @@ function formatNumber(num) {
   return (Number(num) || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 }
 
+function formatCompactNumber(num) {
+  const value = Number(num) || 0;
+  return new Intl.NumberFormat("en", {
+    notation: "compact",
+    maximumFractionDigits: value >= 1_000_000_000 ? 2 : 1,
+  }).format(value);
+}
+
+function formatPercent(value) {
+  return `${(Number(value) || 0).toFixed(1)}%`;
+}
+
 function formatShortDate(dateValue) {
   if (!dateValue) {
     return "-";
@@ -57,17 +69,7 @@ const campaignBattles = computed(() => {
       }
 
       const battleDate = new Date(battle.end_date);
-      if (battleDate < start || battleDate > end) {
-        return false;
-      }
-
-      const attackerSide = getCampaignSide(battle.attacker_name);
-      const defenderSide = getCampaignSide(battle.defender_name);
-
-      return (
-        (attackerSide === "coalition" && defenderSide === "hostile") ||
-        (attackerSide === "hostile" && defenderSide === "coalition")
-      );
+      return battleDate >= start && battleDate <= end;
     })
     .sort((a, b) => new Date(b.end_date) - new Date(a.end_date));
 });
@@ -107,38 +109,6 @@ function createTagAccumulator() {
   }, {});
 }
 
-const battleMetrics = computed(() => {
-  const coalitionWins = campaignBattles.value.filter((battle) => {
-    const coalitionOnAttack = getCampaignSide(battle.attacker_name) === "coalition";
-    const coalitionScore = coalitionOnAttack ? Number(battle.attackers_score) || 0 : Number(battle.defenders_score) || 0;
-    const hostileScore = coalitionOnAttack ? Number(battle.defenders_score) || 0 : Number(battle.attackers_score) || 0;
-    return coalitionScore > hostileScore;
-  }).length;
-
-  return {
-    total: campaignBattles.value.length,
-    coalitionWins,
-    hostileWins: campaignBattles.value.length - coalitionWins,
-    activeCoalitionCountries: new Set(campaignBattles.value.map((battle) => battle.attacker_name).filter((name) => getCampaignSide(name) === "coalition")).size +
-      new Set(campaignBattles.value.map((battle) => battle.defender_name).filter((name) => getCampaignSide(name) === "coalition")).size,
-  };
-});
-
-const allianceCountryCards = computed(() => [
-  {
-    title: "Coalition",
-    subtitle: "Passifists + APP + URL",
-    accent: "emerald",
-    countries: COALITION_COUNTRIES,
-  },
-  {
-    title: "Hostile Side",
-    subtitle: "The Bakers + affiliates",
-    accent: "rose",
-    countries: HOSTILE_COUNTRIES,
-  },
-]);
-
 const countryPerformance = computed(() => {
   const countryMap = new Map();
 
@@ -169,6 +139,73 @@ const countryPerformance = computed(() => {
   return Array.from(countryMap.values()).sort((a, b) => b.total_damage - a.total_damage);
 });
 
+const sideDamage = computed(() =>
+  countryPerformance.value.reduce(
+    (acc, country) => {
+      if (country.side === "coalition") {
+        acc.coalition += country.total_damage;
+      } else if (country.side === "hostile") {
+        acc.hostile += country.total_damage;
+      }
+      return acc;
+    },
+    { coalition: 0, hostile: 0 },
+  ),
+);
+
+const battleMetrics = computed(() => {
+  const coalitionCountriesInWar = new Set();
+  const hostileCountriesInWar = new Set();
+
+  const coalitionWins = campaignBattles.value.filter((battle) => {
+    if (getCampaignSide(battle.attacker_name) === "coalition") {
+      coalitionCountriesInWar.add(battle.attacker_name);
+    }
+    if (getCampaignSide(battle.defender_name) === "coalition") {
+      coalitionCountriesInWar.add(battle.defender_name);
+    }
+    if (getCampaignSide(battle.attacker_name) === "hostile") {
+      hostileCountriesInWar.add(battle.attacker_name);
+    }
+    if (getCampaignSide(battle.defender_name) === "hostile") {
+      hostileCountriesInWar.add(battle.defender_name);
+    }
+
+    const coalitionOnAttack = getCampaignSide(battle.attacker_name) === "coalition";
+    const coalitionScore = coalitionOnAttack ? Number(battle.attackers_score) || 0 : Number(battle.defenders_score) || 0;
+    const hostileScore = coalitionOnAttack ? Number(battle.defenders_score) || 0 : Number(battle.attackers_score) || 0;
+    return coalitionScore > hostileScore;
+  }).length;
+
+  const totalTrackedDamage = sideDamage.value.coalition + sideDamage.value.hostile;
+
+  return {
+    total: campaignBattles.value.length,
+    coalitionWins,
+    hostileWins: campaignBattles.value.length - coalitionWins,
+    activeCoalitionCountries: coalitionCountriesInWar.size,
+    activeHostileCountries: hostileCountriesInWar.size,
+    totalTrackedDamage,
+    coalitionDamageShare: totalTrackedDamage ? (sideDamage.value.coalition / totalTrackedDamage) * 100 : 0,
+    hostileDamageShare: totalTrackedDamage ? (sideDamage.value.hostile / totalTrackedDamage) * 100 : 0,
+  };
+});
+
+const allianceCountryCards = computed(() => [
+  {
+    title: "Coalition",
+    subtitle: "Passifists + APP + URL",
+    accent: "emerald",
+    countries: COALITION_COUNTRIES,
+  },
+  {
+    title: "Hostile Side",
+    subtitle: "The Bakers + affiliates",
+    accent: "rose",
+    countries: HOSTILE_COUNTRIES,
+  },
+]);
+
 const tagPerformance = computed(() => {
   const tagMap = createTagAccumulator();
 
@@ -186,20 +223,6 @@ const tagPerformance = computed(() => {
     }))
     .filter((item) => item.totalDamage > 0)
     .sort((a, b) => b.totalDamage - a.totalDamage);
-});
-
-const sideDamage = computed(() => {
-  return countryPerformance.value.reduce(
-    (acc, country) => {
-      if (country.side === "coalition") {
-        acc.coalition += country.total_damage;
-      } else if (country.side === "hostile") {
-        acc.hostile += country.total_damage;
-      }
-      return acc;
-    },
-    { coalition: 0, hostile: 0 },
-  );
 });
 
 const playerInsights = computed(() => {
@@ -232,8 +255,40 @@ const playerInsights = computed(() => {
     impactfulPlayers: players.filter((player) => (totalDamage ? player.total_damage / totalDamage >= 0.01 : false)).length,
     heavyLifters: players.filter((player) => (totalDamage ? player.total_damage / totalDamage >= 0.05 : false)).length,
     top20Share: totalDamage ? (topDamage / totalDamage) * 100 : 0,
+    top1Share: totalDamage && players[0] ? (players[0].total_damage / totalDamage) * 100 : 0,
   };
 });
+
+const topStatCards = computed(() => [
+  {
+    label: "Matched wars",
+    compact: String(battleMetrics.value.total),
+    full: `${battleMetrics.value.total} tracked`,
+    tone: "slate",
+    help: "All wars from 05.06.2026 until today in the local database.",
+  },
+  {
+    label: "Coalition tracked damage",
+    compact: formatCompactNumber(sideDamage.value.coalition),
+    full: formatNumber(sideDamage.value.coalition),
+    tone: "emerald",
+    help: "Damage by players from Passifists, APP and URL countries in matched wars.",
+  },
+  {
+    label: "Hostile tracked damage",
+    compact: formatCompactNumber(sideDamage.value.hostile),
+    full: formatNumber(sideDamage.value.hostile),
+    tone: "rose",
+    help: "Damage by players from Bakers and affiliate countries in matched wars.",
+  },
+  {
+    label: "Tracked players",
+    compact: String(playerInsights.value.players.length),
+    full: `${playerInsights.value.players.length} unique players`,
+    tone: "slate",
+    help: "Unique players from the listed campaign countries in matched wars.",
+  },
+]);
 
 const recentFronts = computed(() =>
   campaignBattles.value.slice(0, 12).map((battle) => ({
@@ -347,15 +402,15 @@ const dailyTimeline = computed(() => {
     <div class="absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.12)_1px,transparent_1px)] [background-size:28px_28px]"></div>
 
     <div class="relative p-6 md:p-8 lg:p-10 space-y-8">
-      <div class="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+      <div class="flex flex-col gap-5">
         <div class="max-w-3xl">
           <button
             type="button"
-            class="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/70 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-300 transition-colors hover:border-emerald-400/40 hover:text-white"
+            class="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-emerald-100 transition-colors hover:border-emerald-300/60 hover:bg-emerald-500/15 hover:text-white"
             @click="emit('back')"
           >
-            <span>←</span>
-            Back to command center
+            <span>&larr;</span>
+            Exit dashboard
           </button>
 
           <div class="mt-5 inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-4 py-1.5 text-[11px] uppercase tracking-[0.28em] text-emerald-200">
@@ -373,27 +428,47 @@ const dailyTimeline = computed(() => {
           </p>
         </div>
 
-        <div class="grid grid-cols-2 gap-3 md:grid-cols-4 lg:w-[520px]">
-          <div class="rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-4">
-            <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">Matched wars</div>
-            <div class="mt-2 text-2xl font-bold text-white">{{ battleMetrics.total }}</div>
-          </div>
-          <div class="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-4">
-            <div class="text-[11px] uppercase tracking-[0.18em] text-emerald-200/70">Coalition damage</div>
-            <div class="mt-2 text-2xl font-bold text-emerald-200">{{ formatNumber(sideDamage.coalition) }}</div>
-          </div>
-          <div class="rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-4">
-            <div class="text-[11px] uppercase tracking-[0.18em] text-rose-200/70">Hostile damage</div>
-            <div class="mt-2 text-2xl font-bold text-rose-200">{{ formatNumber(sideDamage.hostile) }}</div>
-          </div>
-          <div class="rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-4">
-            <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">Tracked players</div>
-            <div class="mt-2 text-2xl font-bold text-white">{{ playerInsights.players.length }}</div>
+        <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div
+            v-for="card in topStatCards"
+            :key="card.label"
+            class="rounded-2xl px-4 py-4"
+            :class="{
+              'border border-slate-800 bg-slate-900/70': card.tone === 'slate',
+              'border border-emerald-500/20 bg-emerald-500/10': card.tone === 'emerald',
+              'border border-rose-500/20 bg-rose-500/10': card.tone === 'rose',
+            }"
+          >
+            <div
+              class="text-[11px] uppercase tracking-[0.18em]"
+              :class="{
+                'text-slate-500': card.tone === 'slate',
+                'text-emerald-200/70': card.tone === 'emerald',
+                'text-rose-200/70': card.tone === 'rose',
+              }"
+            >
+              {{ card.label }}
+            </div>
+            <div
+              class="mt-2 text-3xl font-black leading-none"
+              :class="{
+                'text-white': card.tone === 'slate',
+                'text-emerald-200': card.tone === 'emerald',
+                'text-rose-200': card.tone === 'rose',
+              }"
+            >
+              {{ card.compact }}
+            </div>
+            <div class="mt-2 text-xs font-mono text-slate-400">{{ card.full }}</div>
+            <p class="mt-2 text-xs leading-5 text-slate-500">{{ card.help }}</p>
           </div>
         </div>
       </div>
 
-      <div v-if="props.loadingBattles || loadingSummary" class="rounded-[24px] border border-slate-800 bg-slate-900/60 px-6 py-10 text-center text-slate-400">
+      <div
+        v-if="props.loadingBattles || loadingSummary"
+        class="rounded-[24px] border border-slate-800 bg-slate-900/60 px-6 py-10 text-center text-slate-400"
+      >
         Building the campaign board...
       </div>
 
@@ -408,40 +483,85 @@ const dailyTimeline = computed(() => {
               <div>
                 <p class="text-[11px] uppercase tracking-[0.2em] text-slate-500">Operational pressure</p>
                 <h3 class="mt-2 text-2xl font-bold text-white">Campaign balance</h3>
-              </div>
-              <div class="text-right text-xs text-slate-500">
-                Coalition wins: <span class="text-emerald-300">{{ battleMetrics.coalitionWins }}</span><br />
-                Hostile wins: <span class="text-rose-300">{{ battleMetrics.hostileWins }}</span>
+                <p class="mt-2 text-sm leading-6 text-slate-400">
+                  This block shows war volume, win split and how the tracked damage is distributed between the two camps.
+                </p>
               </div>
             </div>
 
-            <div class="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div class="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div class="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+                <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">Coalition war wins</div>
+                <div class="mt-3 text-3xl font-bold text-emerald-300">{{ battleMetrics.coalitionWins }}</div>
+                <p class="mt-2 text-sm leading-6 text-slate-400">Wars where the coalition side finished with the higher score.</p>
+              </div>
+              <div class="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+                <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">Hostile war wins</div>
+                <div class="mt-3 text-3xl font-bold text-rose-300">{{ battleMetrics.hostileWins }}</div>
+                <p class="mt-2 text-sm leading-6 text-slate-400">Wars where Bakers or affiliates finished ahead on score.</p>
+              </div>
+              <div class="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+                <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">Coalition countries active</div>
+                <div class="mt-3 text-3xl font-bold text-white">{{ battleMetrics.activeCoalitionCountries }}</div>
+                <p class="mt-2 text-sm leading-6 text-slate-400">Listed coalition countries that actually appeared in matched wars.</p>
+              </div>
+              <div class="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+                <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">Hostile countries active</div>
+                <div class="mt-3 text-3xl font-bold text-white">{{ battleMetrics.activeHostileCountries }}</div>
+                <p class="mt-2 text-sm leading-6 text-slate-400">Listed Bakers or affiliate countries seen on the battlefield.</p>
+              </div>
               <div class="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
                 <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">Top 20 share</div>
-                <div class="mt-3 text-3xl font-bold text-white">{{ playerInsights.top20Share.toFixed(1) }}%</div>
-                <p class="mt-2 text-sm leading-6 text-slate-400">How much of the whole war was carried by the top twenty players.</p>
+                <div class="mt-3 text-3xl font-bold text-white">{{ formatPercent(playerInsights.top20Share) }}</div>
+                <p class="mt-2 text-sm leading-6 text-slate-400">How much of all tracked campaign damage came from the top twenty players.</p>
               </div>
               <div class="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
                 <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">1%+ contributors</div>
                 <div class="mt-3 text-3xl font-bold text-emerald-300">{{ playerInsights.impactfulPlayers }}</div>
-                <p class="mt-2 text-sm leading-6 text-slate-400">Players who each delivered at least one percent of all tracked campaign damage.</p>
+                <p class="mt-2 text-sm leading-6 text-slate-400">Players who each delivered at least one percent of all tracked damage.</p>
               </div>
               <div class="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
                 <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">5%+ heavy lifters</div>
                 <div class="mt-3 text-3xl font-bold text-amber-300">{{ playerInsights.heavyLifters }}</div>
                 <p class="mt-2 text-sm leading-6 text-slate-400">Quick read on whether the campaign is broad-based or carried by very few monsters.</p>
               </div>
+              <div class="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+                <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">Top 1 share</div>
+                <div class="mt-3 text-3xl font-bold text-cyan-300">{{ formatPercent(playerInsights.top1Share) }}</div>
+                <p class="mt-2 text-sm leading-6 text-slate-400">Single-player concentration of all tracked campaign damage.</p>
+              </div>
             </div>
 
-            <div class="mt-6 h-4 overflow-hidden rounded-full border border-slate-800 bg-slate-950/80">
-              <div
-                class="h-full bg-gradient-to-r from-emerald-400 via-emerald-300 to-emerald-500"
-                :style="{ width: `${sideDamage.coalition + sideDamage.hostile ? (sideDamage.coalition / (sideDamage.coalition + sideDamage.hostile)) * 100 : 0}%` }"
-              ></div>
-            </div>
-            <div class="mt-2 flex items-center justify-between text-xs text-slate-500">
-              <span>Coalition output</span>
-              <span>Hostile output</span>
+            <div class="mt-6 rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+              <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">Tracked damage share by bloc</div>
+                  <p class="mt-2 text-sm leading-6 text-slate-400">
+                    This compares total player damage from countries assigned to each side in this dashboard.
+                  </p>
+                </div>
+                <div class="text-right text-sm">
+                  <div class="text-emerald-200">
+                    Coalition: {{ formatPercent(battleMetrics.coalitionDamageShare) }}
+                    <span class="text-slate-500">({{ formatCompactNumber(sideDamage.coalition) }})</span>
+                  </div>
+                  <div class="text-rose-200">
+                    Hostile: {{ formatPercent(battleMetrics.hostileDamageShare) }}
+                    <span class="text-slate-500">({{ formatCompactNumber(sideDamage.hostile) }})</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-4 h-4 overflow-hidden rounded-full border border-slate-800 bg-slate-950/80">
+                <div
+                  class="h-full bg-gradient-to-r from-emerald-400 via-emerald-300 to-emerald-500"
+                  :style="{ width: `${battleMetrics.coalitionDamageShare}%` }"
+                ></div>
+              </div>
+              <div class="mt-2 flex items-center justify-between text-xs text-slate-500">
+                <span>Passifists / APP / URL tracked player damage</span>
+                <span>Bakers / affiliates tracked player damage</span>
+              </div>
             </div>
           </div>
 
@@ -458,7 +578,11 @@ const dailyTimeline = computed(() => {
                 </div>
                 <div
                   class="rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.18em]"
-                  :class="card.accent === 'emerald' ? 'bg-emerald-500/10 text-emerald-200 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-200 border border-rose-500/20'"
+                  :class="
+                    card.accent === 'emerald'
+                      ? 'bg-emerald-500/10 text-emerald-200 border border-emerald-500/20'
+                      : 'bg-rose-500/10 text-rose-200 border border-rose-500/20'
+                  "
                 >
                   {{ card.countries.length }} countries
                 </div>
@@ -487,7 +611,6 @@ const dailyTimeline = computed(() => {
                       {{ tag }}
                     </span>
                   </div>
-                  <p v-if="country.note" class="mt-2 text-xs leading-5 text-slate-500">{{ country.note }}</p>
                 </div>
               </div>
             </div>
@@ -539,7 +662,10 @@ const dailyTimeline = computed(() => {
             <div class="flex items-end justify-between gap-4">
               <div>
                 <p class="text-[11px] uppercase tracking-[0.2em] text-slate-500">Country leaderboard</p>
-                <h3 class="mt-2 text-2xl font-bold text-white">Who actually carried this war?</h3>
+                <h3 class="mt-2 text-2xl font-bold text-white">Country totals in matched wars</h3>
+                <p class="mt-2 text-sm leading-6 text-slate-400">
+                  This table is aggregated per country. Use it when comparing against the main summary grouped by country.
+                </p>
               </div>
             </div>
 
@@ -615,12 +741,7 @@ const dailyTimeline = computed(() => {
             </div>
 
             <div class="mt-6 overflow-x-auto">
-              <svg
-                :viewBox="`0 0 ${dailyTimeline.width} ${dailyTimeline.height}`"
-                class="min-w-[920px] w-full h-[320px]"
-                role="img"
-                aria-label="Campaign timeline"
-              >
+              <svg :viewBox="`0 0 ${dailyTimeline.width} ${dailyTimeline.height}`" class="min-w-[920px] w-full h-[320px]" role="img" aria-label="Campaign timeline">
                 <defs>
                   <linearGradient id="campaignBattleArea" x1="0" x2="0" y1="0" y2="1">
                     <stop offset="0%" stop-color="rgba(148,163,184,0.35)" />
@@ -652,7 +773,7 @@ const dailyTimeline = computed(() => {
                 </g>
 
                 <g
-                  v-for="(day, index) in dailyTimeline.days.filter((_, index) => index % Math.max(1, Math.ceil(dailyTimeline.days.length / 8)) === 0)"
+                  v-for="(day, index) in dailyTimeline.days.filter((_, idx) => idx % Math.max(1, Math.ceil(dailyTimeline.days.length / 8)) === 0)"
                   :key="day.dateKey"
                 >
                   <text
@@ -679,7 +800,10 @@ const dailyTimeline = computed(() => {
             <div class="flex items-end justify-between gap-4">
               <div>
                 <p class="text-[11px] uppercase tracking-[0.2em] text-slate-500">Players</p>
-                <h3 class="mt-2 text-2xl font-bold text-white">Campaign top 20</h3>
+                <h3 class="mt-2 text-2xl font-bold text-white">Top individual players</h3>
+                <p class="mt-2 text-sm leading-6 text-slate-400">
+                  This table is per player, not per country. Compare country totals in the leaderboard above.
+                </p>
               </div>
             </div>
 
@@ -763,6 +887,17 @@ const dailyTimeline = computed(() => {
               </div>
             </div>
           </div>
+        </div>
+
+        <div class="flex justify-center">
+          <button
+            type="button"
+            class="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-5 py-3 text-sm font-semibold text-emerald-100 transition-colors hover:border-emerald-300/60 hover:bg-emerald-500/15 hover:text-white"
+            @click="emit('back')"
+          >
+            <span>&larr;</span>
+            Back to main page
+          </button>
         </div>
       </template>
     </div>
