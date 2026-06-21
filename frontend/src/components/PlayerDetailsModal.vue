@@ -30,10 +30,12 @@ const playerName = computed(() => props.player?.player_name || `Player #${props.
 const profileUrl = computed(() =>
   props.player?.fighter_id ? `https://eclesiar.com/user/${props.player.fighter_id}` : "#",
 );
+
 function toNumber(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
 }
+
 const summaryTotals = computed(() =>
   props.details.reduce(
     (totals, row) => {
@@ -63,11 +65,11 @@ function formatNumber(num) {
       >
         <div class="flex items-center justify-between px-6 py-4 border-b border-slate-800">
           <div>
-            <h3 class="text-lg font-semibold text-white">Szczegóły gracza</h3>
+            <h3 class="text-lg font-semibold text-white">Player Details</h3>
             <p class="text-sm text-slate-400">{{ playerName }}</p>
           </div>
           <button type="button" class="text-slate-400 hover:text-white transition-colors" @click="emit('close')">
-            ✕
+            X
           </button>
         </div>
 
@@ -80,17 +82,17 @@ function formatNumber(num) {
               rel="noopener noreferrer"
               class="inline-flex items-center gap-2 px-3 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-lg border border-slate-700 hover:border-emerald-500/30 transition-colors"
             >
-              Otwórz profil w grze
+              Open In-Game Profile
             </a>
             <span v-if="details.length" class="text-xs text-slate-500 font-mono">
-              {{ details.length }} bitew w podsumowaniu
+              {{ details.length }} battles in this summary
             </span>
           </div>
 
-          <div v-if="loading" class="text-center py-10 text-slate-500">Ładowanie szczegółów...</div>
+          <div v-if="loading" class="text-center py-10 text-slate-500">Loading details...</div>
           <div v-else-if="error" class="text-sm text-red-400">{{ error }}</div>
           <div v-else-if="details.length === 0" class="text-center py-10 text-slate-500">
-            Brak danych dla wybranych bitew.
+            No data for the selected battles.
           </div>
 
           <div v-else class="overflow-x-auto">
@@ -98,16 +100,16 @@ function formatNumber(num) {
               <thead class="bg-slate-950/50 text-slate-400 font-medium uppercase text-xs tracking-wider">
                 <tr>
                   <th class="px-2 py-3 text-left">Battle ID</th>
-                  <th class="px-3 py-3 text-left">Strony</th>
+                  <th class="px-3 py-3 text-left">Sides</th>
                   <th class="px-3 py-3 text-left">Region</th>
-                  <th class="px-3 py-3 text-left">Data</th>
-                  <th class="px-3 py-3 text-right">DMG przed zwycięstwem</th>
-                  <th class="px-3 py-3 text-right">DMG po zwycięstwie</th>
+                  <th class="px-3 py-3 text-left">Date</th>
+                  <th class="px-3 py-3 text-right">DMG Before Victory</th>
+                  <th class="px-3 py-3 text-right">DMG After Victory</th>
                   <th class="px-3 py-3 text-right">BH</th>
                   <th class="px-3 py-3 text-right">Hits</th>
                 </tr>
                 <tr class="bg-slate-900 text-slate-200 normal-case">
-                  <th class="px-2 py-2 text-left">Suma</th>
+                  <th class="px-2 py-2 text-left">Total</th>
                   <th class="px-3 py-2 text-left" colspan="3"></th>
                   <th class="px-3 py-2 text-right font-mono text-emerald-300">
                     {{ formatNumber(summaryTotals.damageBefore) }}
@@ -155,7 +157,7 @@ function formatNumber(num) {
             class="px-4 py-2 text-sm bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium rounded-lg border border-slate-700 hover:border-emerald-500/30 transition-colors"
             @click="emit('close')"
           >
-            Zamknij
+            Close
           </button>
         </div>
       </div>

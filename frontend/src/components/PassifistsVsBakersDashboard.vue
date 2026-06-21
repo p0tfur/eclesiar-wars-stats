@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch } from "vue";
 import { getWarSummary } from "../api.js";
+import CountryDetailsModal from "./CountryDetailsModal.vue";
 import {
   ALLIANCE_TAG_META,
   COALITION_COUNTRIES,
@@ -9,6 +10,7 @@ import {
   getCampaignCountry,
   getCampaignSide,
 } from "../constants/passifistsVsBakers.js";
+import { buildCountryStats } from "../utils/countryStats.js";
 
 const props = defineProps({
   battles: {
@@ -21,11 +23,13 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(["back"]);
+const emit = defineEmits(["back", "open-player-details"]);
 
 const loadingSummary = ref(false);
 const summaryError = ref("");
 const campaignSummary = ref([]);
+const countryDetailsOpen = ref(false);
+const selectedCountry = ref(null);
 
 function formatNumber(num) {
   return (Number(num) || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
@@ -41,6 +45,10 @@ function formatCompactNumber(num) {
 
 function formatPercent(value) {
   return `${(Number(value) || 0).toFixed(1)}%`;
+}
+
+function normalizeCountryKey(value) {
+  return String(value || "").trim().toLowerCase();
 }
 
 function formatShortDate(dateValue) {
@@ -394,6 +402,21 @@ const dailyTimeline = computed(() => {
     hottestDay: [...days].sort((a, b) => b.battles - a.battles)[0] || null,
   };
 });
+
+const selectedCountryStats = computed(() => buildCountryStats(selectedCountry.value, campaignSummary.value, normalizeCountryKey));
+
+function openCountryDetails(country) {
+  selectedCountry.value = {
+    country_name: country.name,
+    country_avatar: country.country_avatar || null,
+    display_name: country.name,
+  };
+  countryDetailsOpen.value = true;
+}
+
+function closeCountryDetails() {
+  countryDetailsOpen.value = false;
+}
 </script>
 
 <template>
@@ -684,7 +707,15 @@ const dailyTimeline = computed(() => {
                 <tbody class="divide-y divide-slate-800/50">
                   <tr v-for="(country, index) in countryPerformance.slice(0, 14)" :key="country.name" class="hover:bg-slate-800/25">
                     <td class="px-2 py-3 text-slate-600 font-mono">{{ index + 1 }}</td>
-                    <td class="px-2 py-3 text-white font-semibold">{{ country.flag }} {{ country.name }}</td>
+                    <td class="px-2 py-3">
+                      <button
+                        type="button"
+                        class="font-semibold text-white hover:text-emerald-200 transition-colors underline-offset-2 hover:underline"
+                        @click="openCountryDetails(country)"
+                      >
+                        {{ country.flag }} {{ country.name }}
+                      </button>
+                    </td>
                     <td class="px-2 py-3">
                       <div class="flex flex-wrap gap-1">
                         <span
@@ -899,6 +930,14 @@ const dailyTimeline = computed(() => {
             Back to main page
           </button>
         </div>
+
+        <CountryDetailsModal
+          :is-open="countryDetailsOpen"
+          :stats="selectedCountryStats"
+          :format-number="formatNumber"
+          @close="closeCountryDetails"
+          @open-player-details="emit('open-player-details', $event)"
+        />
       </template>
     </div>
   </section>

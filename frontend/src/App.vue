@@ -618,6 +618,7 @@ onUnmounted(() => {
         :battles="battles"
         :loading-battles="loading"
         @back="openDefaultView"
+        @open-player-details="openPlayerDetails"
       />
 
       <div v-else class="relative grid grid-cols-1 lg:grid-cols-2 gap-6">

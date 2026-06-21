@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch, nextTick } from "vue";
 import SummaryTable from "./SummaryTable.vue";
 import CountryDetailsModal from "./CountryDetailsModal.vue";
 import { WEAPON_ORDER } from "../constants/weaponOrder.js";
+import { buildCountryStats } from "../utils/countryStats.js";
 
 const props = defineProps({
   summary: {
@@ -318,89 +319,7 @@ const sortedSummary = computed(() => {
 });
 
 const selectedCountryStats = computed(() => {
-  if (!selectedCountry.value?.country_name) {
-    return null;
-  }
-
-  const countryKey = normalizeCountryKey(selectedCountry.value.country_name);
-  const players = props.summary
-    .filter((player) => normalizeCountryKey(player.country_name) === countryKey)
-    .map((player) => ({
-      ...player,
-      display_name: player.player_name || `Player #${player.fighter_id}`,
-      total_damage: Number(player.total_damage) || 0,
-      hit_count: Number(player.hit_count) || 0,
-    }))
-    .sort((a, b) => b.total_damage - a.total_damage);
-
-  if (!players.length) {
-    return null;
-  }
-
-  const totalDamage = players.reduce((sum, player) => sum + player.total_damage, 0);
-  const totalHits = players.reduce((sum, player) => sum + player.hit_count, 0);
-  const playerCount = players.length;
-  const damageValues = players.map((player) => player.total_damage).sort((a, b) => a - b);
-  const sideCounts = players.reduce(
-    (acc, player) => {
-      if (player.side === "ATTACKER") acc.attackers += 1;
-      else if (player.side === "DEFENDER") acc.defenders += 1;
-      else acc.mixed += 1;
-      return acc;
-    },
-    { attackers: 0, defenders: 0, mixed: 0 },
-  );
-
-  const topContributors = players.map((player, index) => {
-    const damageShare = totalDamage > 0 ? (player.total_damage / totalDamage) * 100 : 0;
-    const hitsShare = totalHits > 0 ? (player.hit_count / totalHits) * 100 : 0;
-    const cumulativeDamage =
-      totalDamage > 0
-        ? (players.slice(0, index + 1).reduce((sum, row) => sum + row.total_damage, 0) / totalDamage) * 100
-        : 0;
-
-    return {
-      ...player,
-      damageShare,
-      hitsShare,
-      cumulativeDamage,
-    };
-  });
-
-  function playersNeededFor(percentage) {
-    return topContributors.findIndex((player) => player.cumulativeDamage >= percentage) + 1 || playerCount;
-  }
-
-  function shareOfTop(count) {
-    if (totalDamage === 0) {
-      return 0;
-    }
-    const topDamage = topContributors.slice(0, count).reduce((sum, player) => sum + player.total_damage, 0);
-    return (topDamage / totalDamage) * 100;
-  }
-
-  return {
-    country: selectedCountry.value,
-    players: topContributors,
-    totalDamage,
-    totalHits,
-    playerCount,
-    averageDamage: playerCount ? totalDamage / playerCount : 0,
-    medianDamage:
-      playerCount % 2 === 1
-        ? damageValues[Math.floor(playerCount / 2)]
-        : (damageValues[playerCount / 2 - 1] + damageValues[playerCount / 2]) / 2,
-    top1Share: shareOfTop(1),
-    top3Share: shareOfTop(3),
-    top5Share: shareOfTop(5),
-    playersFor50: playersNeededFor(50),
-    playersFor75: playersNeededFor(75),
-    playersFor90: playersNeededFor(90),
-    playersAbove1Pct: topContributors.filter((player) => player.damageShare >= 1).length,
-    playersAbove5Pct: topContributors.filter((player) => player.damageShare >= 5).length,
-    playersAbove10Pct: topContributors.filter((player) => player.damageShare >= 10).length,
-    sideCounts,
-  };
+  return buildCountryStats(selectedCountry.value, props.summary, normalizeCountryKey);
 });
 
 function toggleSummarySort(key) {

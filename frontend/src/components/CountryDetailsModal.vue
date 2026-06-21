@@ -66,6 +66,41 @@ const effectivenessCards = computed(() => {
     { label: "Mixed/other", value: props.stats.sideCounts.mixed },
   ];
 });
+
+const tailCards = computed(() => {
+  if (!props.stats) {
+    return [];
+  }
+
+  return [
+    { label: "< 0.1% share", value: `${props.stats.tracePlayers}/${props.stats.playerCount}`, tone: "text-rose-300" },
+    { label: "< 0.5% share", value: `${props.stats.marginalPlayers}/${props.stats.playerCount}`, tone: "text-amber-300" },
+    { label: "< 1% share", value: `${props.stats.lowImpactPlayers}/${props.stats.playerCount}`, tone: "text-yellow-200" },
+    { label: "Zero damage", value: `${props.stats.zeroDamagePlayers}/${props.stats.playerCount}`, tone: "text-slate-300" },
+    { label: "Bottom 50% dmg", value: formatPercent(props.stats.bottomHalfShare), tone: "text-cyan-300" },
+    { label: "Outside top 10", value: formatPercent(props.stats.tailShareOutsideTop10), tone: "text-emerald-300" },
+  ];
+});
+
+const performanceBadgeClass = computed(() => {
+  if (!props.stats) {
+    return "bg-slate-500/10 text-slate-200 border-slate-500/20";
+  }
+
+  if (props.stats.performanceTone === "rose") {
+    return "bg-rose-500/10 text-rose-200 border-rose-500/20";
+  }
+
+  if (props.stats.performanceTone === "amber") {
+    return "bg-amber-500/10 text-amber-200 border-amber-500/20";
+  }
+
+  if (props.stats.performanceTone === "cyan") {
+    return "bg-cyan-500/10 text-cyan-200 border-cyan-500/20";
+  }
+
+  return "bg-emerald-500/10 text-emerald-200 border-emerald-500/20";
+});
 </script>
 
 <template>
@@ -88,6 +123,13 @@ const effectivenessCards = computed(() => {
             <div>
               <h3 class="text-lg font-semibold text-white">Country efficiency</h3>
               <p class="text-sm text-slate-400">{{ countryName }}</p>
+              <div
+                v-if="stats?.performanceLabel"
+                class="mt-2 inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]"
+                :class="performanceBadgeClass"
+              >
+                {{ stats.performanceLabel }}
+              </div>
             </div>
           </div>
           <button type="button" class="text-slate-400 hover:text-white transition-colors" @click="emit('close')">
@@ -99,6 +141,11 @@ const effectivenessCards = computed(() => {
           <div v-if="!stats" class="text-center py-10 text-slate-500">No country data available.</div>
 
           <template v-else>
+            <div class="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
+              <h4 class="text-sm font-semibold text-white">Roster profile</h4>
+              <p class="mt-2 text-sm leading-6 text-slate-400">{{ stats.performanceDescription }}</p>
+            </div>
+
             <div class="grid grid-cols-2 xl:grid-cols-4 gap-3">
               <div
                 v-for="card in metricCards"
@@ -138,6 +185,23 @@ const effectivenessCards = computed(() => {
                     <div class="text-[11px] uppercase tracking-[0.16em] text-slate-500">{{ card.label }}</div>
                     <div class="mt-2 text-base font-semibold text-cyan-300">{{ card.value }}</div>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
+              <h4 class="text-sm font-semibold text-white">Long tail / low impact</h4>
+              <p class="mt-1 text-xs text-slate-500">
+                Quick view of how many people showed up but contributed only trace damage.
+              </p>
+              <div class="mt-4 grid grid-cols-2 xl:grid-cols-3 gap-3">
+                <div
+                  v-for="card in tailCards"
+                  :key="card.label"
+                  class="rounded-xl border border-slate-800 bg-slate-900/70 px-3 py-3"
+                >
+                  <div class="text-[11px] uppercase tracking-[0.16em] text-slate-500">{{ card.label }}</div>
+                  <div class="mt-2 text-base font-semibold" :class="card.tone">{{ card.value }}</div>
                 </div>
               </div>
             </div>
