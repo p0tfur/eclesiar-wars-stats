@@ -35,6 +35,7 @@ const campaignSummary = ref([]);
 const preWarSummary = ref([]);
 const countryDetailsOpen = ref(false);
 const selectedCountry = ref(null);
+const breakoutLimit = ref(20);
 
 function formatNumber(num) {
   return (Number(num) || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
@@ -434,29 +435,43 @@ const preWarDamageInsights = computed(() => {
 
   const trackedParticipants = rows.length;
   const activeBeforeWar = rows.filter((player) => player.wasActiveBeforeWar).length;
-  const activeBeforeWarCoalition = rows.filter(
-    (player) => player.wasActiveBeforeWar && player.side === "coalition",
-  ).length;
-  const activeBeforeWarHostile = rows.filter(
-    (player) => player.wasActiveBeforeWar && player.side === "hostile",
-  ).length;
   const dormantBeforeWar = rows.filter((player) => player.dormantBeforeWar).length;
   const explosiveGrowth = rows.filter((player) => player.preWarDamage > 0 && player.growthRatio >= 5).length;
   const warDamageTotal = rows.reduce((sum, player) => sum + player.warDamage, 0);
   const preWarDamageTotal = rows.reduce((sum, player) => sum + player.preWarDamage, 0);
 
+  const coalitionRows = rows.filter((player) => player.side === "coalition");
+  const hostileRows = rows.filter((player) => player.side === "hostile");
+  const coalitionTotal = coalitionRows.length;
+  const hostileTotal = hostileRows.length;
+  const activeBeforeWarCoalition = coalitionRows.filter((player) => player.wasActiveBeforeWar).length;
+  const activeBeforeWarHostile = hostileRows.filter((player) => player.wasActiveBeforeWar).length;
+  const newlyActiveCoalition = coalitionRows.filter((player) => !player.wasActiveBeforeWar).length;
+  const newlyActiveHostile = hostileRows.filter((player) => !player.wasActiveBeforeWar).length;
+
   return {
     rows,
     trackedParticipants,
     activeBeforeWar,
+    coalitionTotal,
+    hostileTotal,
     activeBeforeWarCoalition,
     activeBeforeWarHostile,
+    newlyActiveCoalition,
+    newlyActiveHostile,
     dormantBeforeWar,
     explosiveGrowth,
     warDamageTotal,
     preWarDamageTotal,
-    topBreakouts: rows.slice(0, 20),
   };
+});
+
+const topBreakouts = computed(() => {
+  const limit = breakoutLimit.value;
+  if (limit === Infinity) {
+    return preWarDamageInsights.value.rows;
+  }
+  return preWarDamageInsights.value.rows.slice(0, limit);
 });
 
 const topStatCards = computed(() => [
@@ -1076,21 +1091,45 @@ function formatGrowthRatio(value) {
             </div>
           </div>
 
-          <div class="mt-6 grid gap-3 md:grid-cols-3 xl:grid-cols-5">
+          <div class="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             <div class="rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-4">
               <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">War participants</div>
               <div class="mt-2 text-2xl font-black text-white">{{ preWarDamageInsights.trackedParticipants }}</div>
               <p class="mt-2 text-xs leading-5 text-slate-400">Players with tracked damage during the campaign.</p>
             </div>
             <div class="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-4">
-              <div class="text-[11px] uppercase tracking-[0.18em] text-emerald-200/80">Coalition active</div>
-              <div class="mt-2 text-2xl font-black text-white">{{ preWarDamageInsights.activeBeforeWarCoalition }}</div>
-              <p class="mt-2 text-xs leading-5 text-slate-300">Coalition players with pre-war damage in the prior 30-day window.</p>
+              <div class="text-[11px] uppercase tracking-[0.18em] text-emerald-200/80">Coalition</div>
+              <div class="mt-3 grid grid-cols-2 gap-3">
+                <div>
+                  <div class="text-[10px] uppercase tracking-wider text-emerald-300/70">Pre-war active</div>
+                  <div class="mt-1 text-xl font-black text-white">{{ preWarDamageInsights.activeBeforeWarCoalition }}</div>
+                </div>
+                <div>
+                  <div class="text-[10px] uppercase tracking-wider text-emerald-300/70">War active</div>
+                  <div class="mt-1 text-xl font-black text-white">{{ preWarDamageInsights.coalitionTotal }}</div>
+                </div>
+              </div>
+              <p class="mt-2 text-xs text-slate-400">
+                <span class="text-amber-300 font-semibold">{{ preWarDamageInsights.newlyActiveCoalition }} zombies</span>
+                (zero pre-war damage)
+              </p>
             </div>
             <div class="rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-4">
-              <div class="text-[11px] uppercase tracking-[0.18em] text-rose-200/80">Hostile active</div>
-              <div class="mt-2 text-2xl font-black text-white">{{ preWarDamageInsights.activeBeforeWarHostile }}</div>
-              <p class="mt-2 text-xs leading-5 text-slate-300">Hostile players with pre-war damage in the prior 30-day window.</p>
+              <div class="text-[11px] uppercase tracking-[0.18em] text-rose-200/80">Hostile</div>
+              <div class="mt-3 grid grid-cols-2 gap-3">
+                <div>
+                  <div class="text-[10px] uppercase tracking-wider text-rose-300/70">Pre-war active</div>
+                  <div class="mt-1 text-xl font-black text-white">{{ preWarDamageInsights.activeBeforeWarHostile }}</div>
+                </div>
+                <div>
+                  <div class="text-[10px] uppercase tracking-wider text-rose-300/70">War active</div>
+                  <div class="mt-1 text-xl font-black text-white">{{ preWarDamageInsights.hostileTotal }}</div>
+                </div>
+              </div>
+              <p class="mt-2 text-xs text-slate-400">
+                <span class="text-amber-300 font-semibold">{{ preWarDamageInsights.newlyActiveHostile }} zombies</span>
+                (zero pre-war damage)
+              </p>
             </div>
             <div class="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-4">
               <div class="text-[11px] uppercase tracking-[0.18em] text-amber-200/80">Dormant before war</div>
@@ -1142,7 +1181,7 @@ function formatGrowthRatio(value) {
               </thead>
               <tbody class="divide-y divide-slate-800/50">
                 <tr
-                  v-for="(player, index) in preWarDamageInsights.topBreakouts"
+                  v-for="(player, index) in topBreakouts"
                   :key="`prewar-${player.fighter_id}`"
                   class="hover:bg-slate-800/25"
                 >
@@ -1164,6 +1203,28 @@ function formatGrowthRatio(value) {
                 </tr>
               </tbody>
             </table>
+          </div>
+
+          <div class="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <span class="text-xs text-slate-500 mr-1">Show:</span>
+            <button
+              v-for="n in [20, 50, 100]"
+              :key="n"
+              type="button"
+              class="rounded-full px-3 py-1 text-xs font-medium transition-colors"
+              :class="breakoutLimit === n ? 'bg-slate-700 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200'"
+              @click="breakoutLimit = n"
+            >
+              {{ n }}
+            </button>
+            <button
+              type="button"
+              class="rounded-full px-3 py-1 text-xs font-medium transition-colors"
+              :class="breakoutLimit === Infinity ? 'bg-slate-700 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200'"
+              @click="breakoutLimit = Infinity"
+            >
+              All
+            </button>
           </div>
         </div>
 
