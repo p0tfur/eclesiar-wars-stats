@@ -564,10 +564,15 @@ const preWarDamageInsights = computed(() => {
   const hostileTotal = hostileRows.length;
   const activeBeforeWarCoalition = coalitionRows.filter((player) => player.wasActiveBeforeWar).length;
   const activeBeforeWarHostile = hostileRows.filter((player) => player.wasActiveBeforeWar).length;
-  const newlyActiveCoalition = coalitionRows.filter(
+
+  const coalitionZombies = coalitionRows.filter(
     (player) => !player.wasActiveBeforeWar && !PASSIFISTS_BUILDER_NAMES.has(player.display_name || player.player_name),
-  ).length;
-  const newlyActiveHostile = hostileRows.filter((player) => !player.wasActiveBeforeWar).length;
+  );
+  const hostileZombies = hostileRows.filter((player) => !player.wasActiveBeforeWar);
+  const newlyActiveCoalition = coalitionZombies.length;
+  const newlyActiveHostile = hostileZombies.length;
+  const zombieDamageCoalition = coalitionZombies.reduce((sum, p) => sum + p.warDamage, 0);
+  const zombieDamageHostile = hostileZombies.reduce((sum, p) => sum + p.warDamage, 0);
 
   return {
     rows,
@@ -579,6 +584,8 @@ const preWarDamageInsights = computed(() => {
     activeBeforeWarHostile,
     newlyActiveCoalition,
     newlyActiveHostile,
+    zombieDamageCoalition,
+    zombieDamageHostile,
     dormantBeforeWar,
     explosiveGrowth,
     warDamageTotal,
@@ -1243,7 +1250,7 @@ function formatGrowthRatio(value) {
               </div>
               <p class="mt-2 text-xs text-slate-400">
                 <span class="text-amber-300 font-semibold">{{ preWarDamageInsights.newlyActiveCoalition }} zombies</span>
-                (zero pre-war damage)
+                with {{ formatCompactNumber(preWarDamageInsights.zombieDamageCoalition) }} damage
               </p>
             </div>
             <div class="rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-4">
@@ -1260,7 +1267,7 @@ function formatGrowthRatio(value) {
               </div>
               <p class="mt-2 text-xs text-slate-400">
                 <span class="text-amber-300 font-semibold">{{ preWarDamageInsights.newlyActiveHostile }} zombies</span>
-                (zero pre-war damage)
+                with {{ formatCompactNumber(preWarDamageInsights.zombieDamageHostile) }} damage
               </p>
             </div>
             <div class="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-4">
