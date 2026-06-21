@@ -485,6 +485,44 @@ async function cachePlayerInfo(playerIds, apiKey) {
 }
 
 /**
+ * Aggregate battle hero counts for selected battles
+ * @param {Array<number>} battleIds - List of battle IDs
+ * @returns {Promise<Map<number, number>>} - Map of fighter_id to BH count
+ */
+async function getBattleHeroCounts(battleIds) {
+  if (!battleIds || battleIds.length === 0) {
+    return new Map();
+  }
+
+  const placeholders = battleIds.map(() => "?").join(",");
+  const [rows] = await pool.query(
+    `
+    SELECT hero_id, SUM(hero_count) as total_count
+    FROM (
+      SELECT attackers_hero as hero_id, COUNT(*) as hero_count
+      FROM rounds
+      WHERE attackers_hero IS NOT NULL AND battle_id IN (${placeholders})
+      GROUP BY attackers_hero
+      UNION ALL
+      SELECT defenders_hero as hero_id, COUNT(*) as hero_count
+      FROM rounds
+      WHERE defenders_hero IS NOT NULL AND battle_id IN (${placeholders})
+      GROUP BY defenders_hero
+    ) hero_counts
+    GROUP BY hero_id
+    `,
+    [...battleIds, ...battleIds],
+  );
+
+  const heroMap = new Map();
+  rows.forEach((row) => {
+    heroMap.set(row.hero_id, Number(row.total_count) || 0);
+  });
+
+  return heroMap;
+}
+
+/**
  * Cache country info from battle data (attacker/defender are countries)
  * @param {number} countryId - Country ID
  * @param {string} name - Country name
@@ -647,6 +685,7 @@ async function calculateBatchSummary(battleIds) {
         country_avatar: row.country_avatar,
         total_damage: 0,
         hit_count: 0,
+        bh_count: 0,
         weapons: {},
         // Track first hit for side determination
         _firstHit: row.first_hit,
@@ -741,6 +780,7 @@ export async function getWarSummary(battleIds) {
             country_avatar: countryRows[0]?.avatar || null,
             total_damage: 0,
             hit_count: 0,
+            bh_count: 0,
             weapons: {},
             side: stat.side,
           });
@@ -790,6 +830,7 @@ export async function getWarSummary(battleIds) {
             country_avatar: stat.country_avatar,
             total_damage: 0,
             hit_count: 0,
+            bh_count: 0,
             weapons: {},
             side: stat._firstHitSide || "UNKNOWN",
           });
@@ -835,6 +876,7 @@ export async function getWarSummary(battleIds) {
             country_avatar: stat.country_avatar,
             total_damage: 0,
             hit_count: 0,
+            bh_count: 0,
             weapons: {},
             side: stat._firstHitSide || "UNKNOWN",
           });
@@ -861,6 +903,11 @@ export async function getWarSummary(battleIds) {
     }
   }
 
+  const heroCounts = await getBattleHeroCounts(battleIds);
+  for (const player of playerMap.values()) {
+    player.bh_count = heroCounts.get(player.fighter_id) || 0;
+  }
+
   // Convert to array and sort by total damage
   const summaryRows = Array.from(playerMap.values())
     .map((player) => ({
@@ -872,6 +919,7 @@ export async function getWarSummary(battleIds) {
       country_avatar: player.country_avatar,
       total_damage: player.total_damage,
       hit_count: player.hit_count,
+      bh_count: player.bh_count || 0,
       side: player.side || "UNKNOWN",
       weapons: player.weapons,
     }))

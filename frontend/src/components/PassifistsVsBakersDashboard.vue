@@ -2,6 +2,9 @@
 import { computed, ref, watch } from "vue";
 import { getWarSummary } from "../api.js";
 import CountryDetailsModal from "./CountryDetailsModal.vue";
+import PassifistsVsBakersFrontLog from "./PassifistsVsBakersFrontLog.vue";
+import PassifistsVsBakersLeaderboards from "./PassifistsVsBakersLeaderboards.vue";
+import PassifistsVsBakersTimeline from "./PassifistsVsBakersTimeline.vue";
 import {
   ALLIANCE_TAG_META,
   COALITION_COUNTRIES,
@@ -249,6 +252,7 @@ const playerInsights = computed(() => {
         display_name: player.player_name || `Player #${player.fighter_id}`,
         total_damage: Number(player.total_damage) || 0,
         hit_count: Number(player.hit_count) || 0,
+        bh_count: Number(player.bh_count) || 0,
       };
     })
     .filter(Boolean)
@@ -752,188 +756,15 @@ function emitPlayerDetails(player) {
         </div>
 
         <div class="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-          <div class="rounded-[26px] border border-slate-800 bg-slate-900/65 p-5 md:p-6 xl:col-span-2">
-            <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-              <div>
-                <p class="text-[11px] uppercase tracking-[0.2em] text-slate-500">Timeline</p>
-                <h3 class="mt-2 text-2xl font-bold text-white">Day-by-day campaign pressure</h3>
-                <p class="mt-2 text-sm leading-6 text-slate-400">
-                  Area shows how many matched wars fired each day. Green and red lines track total round score taken that day by each bloc.
-                </p>
-              </div>
-              <div class="grid grid-cols-2 gap-3 text-sm md:min-w-[320px]">
-                <div class="rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3">
-                  <div class="text-[11px] uppercase tracking-[0.16em] text-slate-500">Active days</div>
-                  <div class="mt-2 text-xl font-bold text-white">{{ dailyTimeline.totalBattleDays }}</div>
-                </div>
-                <div class="rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3">
-                  <div class="text-[11px] uppercase tracking-[0.16em] text-slate-500">Peak day</div>
-                  <div class="mt-2 text-xl font-bold text-white">
-                    {{ dailyTimeline.hottestDay?.dateLabel || "-" }}
-                  </div>
-                  <div class="text-xs text-slate-500">
-                    {{ dailyTimeline.hottestDay?.battles || 0 }} battles
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="mt-6 overflow-x-auto">
-              <svg :viewBox="`0 0 ${dailyTimeline.width} ${dailyTimeline.height}`" class="min-w-[920px] w-full h-[320px]" role="img" aria-label="Campaign timeline">
-                <defs>
-                  <linearGradient id="campaignBattleArea" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="0%" stop-color="rgba(148,163,184,0.35)" />
-                    <stop offset="100%" stop-color="rgba(148,163,184,0.04)" />
-                  </linearGradient>
-                </defs>
-
-                <g v-for="step in 4" :key="step">
-                  <line
-                    :x1="26"
-                    :x2="dailyTimeline.width - 26"
-                    :y1="dailyTimeline.top + (dailyTimeline.innerHeight / 4) * step"
-                    :y2="dailyTimeline.top + (dailyTimeline.innerHeight / 4) * step"
-                    stroke="rgba(148,163,184,0.14)"
-                    stroke-dasharray="4 6"
-                  />
-                </g>
-
-                <path :d="dailyTimeline.battleArea" fill="url(#campaignBattleArea)" />
-                <path :d="dailyTimeline.coalitionLine" fill="none" stroke="#34d399" stroke-width="4" stroke-linecap="round" />
-                <path :d="dailyTimeline.hostileLine" fill="none" stroke="#fb7185" stroke-width="4" stroke-linecap="round" />
-
-                <g v-for="point in dailyTimeline.battlePoints" :key="point.day.dateKey">
-                  <circle :cx="point.x" :cy="point.y" r="4" fill="#e2e8f0" fill-opacity="0.85" />
-                  <title>
-                    {{ point.day.dateKey }} | battles: {{ point.day.battles }} | coalition rounds:
-                    {{ point.day.coalitionRounds }} | hostile rounds: {{ point.day.hostileRounds }}
-                  </title>
-                </g>
-
-                <g
-                  v-for="(day, index) in dailyTimeline.days.filter((_, idx) => idx % Math.max(1, Math.ceil(dailyTimeline.days.length / 8)) === 0)"
-                  :key="day.dateKey"
-                >
-                  <text
-                    :x="26 + (dailyTimeline.days.length === 1 ? (dailyTimeline.width - 52) / 2 : ((index * Math.max(1, Math.ceil(dailyTimeline.days.length / 8))) / (dailyTimeline.days.length - 1)) * (dailyTimeline.width - 52))"
-                    :y="dailyTimeline.height - 10"
-                    fill="#64748b"
-                    font-size="11"
-                    text-anchor="middle"
-                  >
-                    {{ day.dateLabel }}
-                  </text>
-                </g>
-              </svg>
-            </div>
-
-            <div class="mt-4 flex flex-wrap items-center gap-4 text-xs text-slate-400">
-              <span class="inline-flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-slate-300"></span> matched wars per day</span>
-              <span class="inline-flex items-center gap-2"><span class="h-2.5 w-6 rounded-full bg-emerald-400"></span> coalition round score</span>
-              <span class="inline-flex items-center gap-2"><span class="h-2.5 w-6 rounded-full bg-rose-400"></span> hostile round score</span>
-            </div>
-          </div>
-
-          <div class="rounded-[26px] border border-slate-800 bg-slate-900/65 p-5 md:p-6">
-            <div class="flex items-end justify-between gap-4">
-              <div>
-                <p class="text-[11px] uppercase tracking-[0.2em] text-slate-500">Players</p>
-                <h3 class="mt-2 text-2xl font-bold text-white">Top individual players</h3>
-                <p class="mt-2 text-sm leading-6 text-slate-400">
-                  This table is per player, not per country. Compare country totals in the leaderboard above.
-                </p>
-              </div>
-            </div>
-
-            <div class="mt-5 overflow-x-auto">
-              <table class="w-full text-sm">
-                <thead class="text-slate-500 uppercase text-[11px] tracking-[0.16em]">
-                  <tr>
-                    <th class="px-2 py-3 text-left">#</th>
-                    <th class="px-2 py-3 text-left">Player</th>
-                    <th class="px-2 py-3 text-left">Country</th>
-                    <th class="px-2 py-3 text-left">Tags</th>
-                    <th class="px-2 py-3 text-right">Damage</th>
-                    <th class="px-2 py-3 text-right">Hits</th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-800/50">
-                  <tr v-for="(player, index) in playerInsights.players.slice(0, 20)" :key="player.fighter_id" class="hover:bg-slate-800/25">
-                    <td class="px-2 py-3 text-slate-600 font-mono">{{ index + 1 }}</td>
-                    <td class="px-2 py-3">
-                      <button
-                        type="button"
-                        class="font-semibold text-white hover:text-emerald-200 transition-colors underline-offset-2 hover:underline"
-                        @click="emitPlayerDetails(player)"
-                      >
-                        {{ player.display_name }}
-                      </button>
-                    </td>
-                    <td class="px-2 py-3 text-slate-300">{{ player.flag }} {{ player.country_name }}</td>
-                    <td class="px-2 py-3">
-                      <div class="flex flex-wrap gap-1">
-                        <span
-                          v-for="tag in player.tags"
-                          :key="tag"
-                          class="rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.16em]"
-                          :class="{
-                            'bg-emerald-500/10 text-emerald-200': tag === 'Passifists',
-                            'bg-sky-500/10 text-sky-200': tag === 'APP',
-                            'bg-violet-500/10 text-violet-200': tag === 'URL',
-                            'bg-rose-500/10 text-rose-200': tag === 'Bakers',
-                            'bg-amber-500/10 text-amber-200': tag === 'Affiliates',
-                          }"
-                        >
-                          {{ tag }}
-                        </span>
-                      </div>
-                    </td>
-                    <td class="px-2 py-3 text-right font-mono text-emerald-300">{{ formatNumber(player.total_damage) }}</td>
-                    <td class="px-2 py-3 text-right font-mono text-slate-300">{{ formatNumber(player.hit_count) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="rounded-[26px] border border-slate-800 bg-slate-900/65 p-5 md:p-6">
-            <div class="flex items-end justify-between gap-4">
-              <div>
-                <p class="text-[11px] uppercase tracking-[0.2em] text-slate-500">Front log</p>
-                <h3 class="mt-2 text-2xl font-bold text-white">Recent war fronts</h3>
-              </div>
-            </div>
-
-            <div class="mt-5 space-y-3">
-              <div
-                v-for="battle in recentFronts"
-                :key="battle.id"
-                class="rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-4"
-              >
-                <div class="flex items-center justify-between gap-3">
-                  <div class="text-sm font-semibold text-white">#{{ battle.id }}</div>
-                  <div class="text-xs uppercase tracking-[0.16em] text-slate-500">{{ formatShortDate(battle.end_date) }}</div>
-                </div>
-                <div class="mt-3 flex items-center justify-between gap-3 text-sm">
-                  <div class="min-w-0">
-                    <div class="font-semibold text-emerald-200">
-                      {{ battle.attacker?.flag || "•" }} {{ battle.attacker_name }}
-                    </div>
-                    <div class="text-xs text-slate-500">Attacker</div>
-                  </div>
-                  <div class="text-lg font-black text-slate-500">{{ battle.attackers_score }} : {{ battle.defenders_score }}</div>
-                  <div class="min-w-0 text-right">
-                    <div class="font-semibold text-rose-200">
-                      {{ battle.defender?.flag || "•" }} {{ battle.defender_name }}
-                    </div>
-                    <div class="text-xs text-slate-500">Defender</div>
-                  </div>
-                </div>
-                <div class="mt-3 text-xs text-slate-500">{{ battle.region_name || "Unknown region" }}</div>
-              </div>
-            </div>
-          </div>
+          <PassifistsVsBakersTimeline :daily-timeline="dailyTimeline" />
+          <PassifistsVsBakersLeaderboards
+            :players="playerInsights.players"
+            :format-number="formatNumber"
+            @open-player-details="emitPlayerDetails"
+          />
         </div>
+
+        <PassifistsVsBakersFrontLog :recent-fronts="recentFronts" :format-short-date="formatShortDate" />
 
         <div class="flex justify-center">
           <button
