@@ -23,3 +23,5 @@
 - 2026-06-21: Dodano ranking Top10 BH w dashboardzie Passifists vs The Bakers oraz dociągnięto zliczanie BH w podsumowaniu wojny.
 - 2026-06-21: Rozbito statystykę "Active before war" na Coalition/Hostile w sekcji Pre-war baseline oraz rozszerzono listę top breakouts z 12 do 20 graczy.
 - 2026-06-21: Dodano liczby "zombie" (zero pre-war damage) per strona do kart Coalition/Hostile oraz przyciski 20/50/100/All pod tabelą top breakouts.
+- 2026-06-21: Wykluczono graczy z passsi.txt (budowniczowie Passifists) z liczby zombie Coalition — zero pre-war damage nie oznacza braku aktywności.
+- 2026-06-21: Dodano sortowanie klikalnych kolumn (Pre-war 30d, War damage, Delta, Growth) w tabeli top breakouts z cyklem desc → asc → default.

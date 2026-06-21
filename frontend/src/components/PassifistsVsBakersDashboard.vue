@@ -15,6 +15,111 @@ import {
 } from "../constants/passifistsVsBakers.js";
 import { buildCountryStats } from "../utils/countryStats.js";
 
+// Passifists gracze aktywni w budowie — wykluczeni z liczby zombie (zero pre-war damage nie oznacza braku aktywności)
+const PASSIFISTS_BUILDER_NAMES = new Set([
+  "Nick",
+  "Formless",
+  "Waz Trzyczwarte Cala",
+  "Dzejkob",
+  "KamiLisu",
+  "hunobano",
+  "Xethr",
+  "Egzo",
+  "LHlh",
+  "DThea",
+  "JestemKaspi",
+  "kmi3c",
+  "szaruga",
+  "morswin28",
+  "Pawlosz",
+  "aduch",
+  "hexaf",
+  "ver",
+  "Urząd Skarbowy",
+  "DariuszeX",
+  "Secret-service2",
+  "djetc",
+  "Marospan",
+  "KombatWombat",
+  "Nhk",
+  "schwesto",
+  "ChillExecutiveOfficer",
+  "wariat1986",
+  "ms05",
+  "Wianek",
+  "Pleonazm",
+  "ami",
+  "zeus_pl",
+  "Ponczek z pudrem",
+  "blindTarget",
+  "Kmicic",
+  "Jez8011",
+  "Esperalinho",
+  "kamyk92",
+  "Paddington Brown",
+  "Szwierz",
+  "Angmar",
+  "valarian",
+  "Chattab",
+  "Revan",
+  "Maison",
+  "rotheden",
+  "Desseres",
+  "Mariano Italiano",
+  "Znacie Mnie",
+  "Pessimus",
+  "Tomekku",
+  "Sniegowy",
+  "calibromaniac",
+  "Nushid",
+  "Marcin Łopian",
+  "Krychu945",
+  "Carrow",
+  "Czeslaw102",
+  "Derailedman",
+  "21Bestia_z_Wadowic37",
+  "Bagol",
+  "DominusOrbis",
+  "Seavel",
+  "Beadowulf",
+  "bckqs",
+  "vaggelisker",
+  "Bdzigost",
+  "Adamus",
+  "wrfw",
+  "Lox82",
+  "Hoken",
+  "kuba1664",
+  "LUCYFER666",
+  "StaryLis",
+  "Elpresidente",
+  "Platinium",
+  "Vader0pr",
+  "Cedru",
+  "ropuszek",
+  "Babel",
+  "SirManiek",
+  "eprofi",
+  "The kaizer",
+  "Relkin",
+  "OjciecPIO",
+  "Cichy_3337",
+  "Artanaro",
+  "p0tfur",
+  "Janusz Miotacz",
+  "diego7",
+  "kc2000",
+  "Bolorollo",
+  "Gumala",
+  "Hulo",
+  "EvilGrin",
+  "KapitanBomba",
+  "Leju",
+  "Paszko_Rymbaba",
+  "akm990",
+  "Anka",
+]);
+
 const props = defineProps({
   battles: {
     type: Array,
@@ -36,6 +141,8 @@ const preWarSummary = ref([]);
 const countryDetailsOpen = ref(false);
 const selectedCountry = ref(null);
 const breakoutLimit = ref(20);
+// { key: 'preWarDamage' | 'warDamage' | 'damageDelta' | 'growthRatio', dir: 'asc' | 'desc' } | null
+const breakoutSort = ref(null);
 
 function formatNumber(num) {
   return (Number(num) || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
@@ -67,6 +174,17 @@ function formatShortDate(dateValue) {
     month: "2-digit",
     year: "numeric",
   });
+}
+
+function toggleBreakoutSort(key) {
+  const current = breakoutSort.value;
+  if (!current || current.key !== key) {
+    breakoutSort.value = { key, dir: "desc" };
+  } else if (current.dir === "desc") {
+    breakoutSort.value = { key, dir: "asc" };
+  } else {
+    breakoutSort.value = null;
+  }
 }
 
 const today = computed(() => new Date().toISOString().slice(0, 10));
@@ -446,7 +564,9 @@ const preWarDamageInsights = computed(() => {
   const hostileTotal = hostileRows.length;
   const activeBeforeWarCoalition = coalitionRows.filter((player) => player.wasActiveBeforeWar).length;
   const activeBeforeWarHostile = hostileRows.filter((player) => player.wasActiveBeforeWar).length;
-  const newlyActiveCoalition = coalitionRows.filter((player) => !player.wasActiveBeforeWar).length;
+  const newlyActiveCoalition = coalitionRows.filter(
+    (player) => !player.wasActiveBeforeWar && !PASSIFISTS_BUILDER_NAMES.has(player.display_name || player.player_name),
+  ).length;
   const newlyActiveHostile = hostileRows.filter((player) => !player.wasActiveBeforeWar).length;
 
   return {
@@ -467,11 +587,23 @@ const preWarDamageInsights = computed(() => {
 });
 
 const topBreakouts = computed(() => {
+  let data = [...preWarDamageInsights.value.rows];
+  const sort = breakoutSort.value;
+  if (sort) {
+    data.sort((a, b) => {
+      const va = a[sort.key] ?? 0;
+      const vb = b[sort.key] ?? 0;
+      if (sort.dir === "asc") {
+        return va - vb;
+      }
+      return vb - va;
+    });
+  }
   const limit = breakoutLimit.value;
   if (limit === Infinity) {
-    return preWarDamageInsights.value.rows;
+    return data;
   }
-  return preWarDamageInsights.value.rows.slice(0, limit);
+  return data.slice(0, limit);
 });
 
 const topStatCards = computed(() => [
@@ -1173,10 +1305,42 @@ function formatGrowthRatio(value) {
                   <th class="px-2 py-3 text-left">#</th>
                   <th class="px-2 py-3 text-left">Player</th>
                   <th class="px-2 py-3 text-left">Country</th>
-                  <th class="px-2 py-3 text-right">Pre-war 30d</th>
-                  <th class="px-2 py-3 text-right">War damage</th>
-                  <th class="px-2 py-3 text-right">Delta</th>
-                  <th class="px-2 py-3 text-right">Growth</th>
+                  <th
+                    class="px-2 py-3 text-right cursor-pointer select-none hover:text-slate-300 transition-colors"
+                    @click="toggleBreakoutSort('preWarDamage')"
+                  >
+                    <span class="inline-flex items-center gap-1">
+                      Pre-war 30d
+                      <span v-if="breakoutSort?.key === 'preWarDamage'" class="text-[10px]">{{ breakoutSort.dir === 'asc' ? '↑' : '↓' }}</span>
+                    </span>
+                  </th>
+                  <th
+                    class="px-2 py-3 text-right cursor-pointer select-none hover:text-slate-300 transition-colors"
+                    @click="toggleBreakoutSort('warDamage')"
+                  >
+                    <span class="inline-flex items-center gap-1">
+                      War damage
+                      <span v-if="breakoutSort?.key === 'warDamage'" class="text-[10px]">{{ breakoutSort.dir === 'asc' ? '↑' : '↓' }}</span>
+                    </span>
+                  </th>
+                  <th
+                    class="px-2 py-3 text-right cursor-pointer select-none hover:text-slate-300 transition-colors"
+                    @click="toggleBreakoutSort('damageDelta')"
+                  >
+                    <span class="inline-flex items-center gap-1">
+                      Delta
+                      <span v-if="breakoutSort?.key === 'damageDelta'" class="text-[10px]">{{ breakoutSort.dir === 'asc' ? '↑' : '↓' }}</span>
+                    </span>
+                  </th>
+                  <th
+                    class="px-2 py-3 text-right cursor-pointer select-none hover:text-slate-300 transition-colors"
+                    @click="toggleBreakoutSort('growthRatio')"
+                  >
+                    <span class="inline-flex items-center gap-1">
+                      Growth
+                      <span v-if="breakoutSort?.key === 'growthRatio'" class="text-[10px]">{{ breakoutSort.dir === 'asc' ? '↑' : '↓' }}</span>
+                    </span>
+                  </th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-800/50">
