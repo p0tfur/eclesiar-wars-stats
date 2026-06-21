@@ -73,8 +73,6 @@ export function buildCountryStats(country, allPlayers, normalizeCountryKey) {
   const tracePlayers = topContributors.filter((player) => player.damageShare > 0 && player.damageShare < 0.1);
   const marginalPlayers = topContributors.filter((player) => player.damageShare > 0 && player.damageShare < 0.5);
   const lowImpactPlayers = topContributors.filter((player) => player.damageShare > 0 && player.damageShare < 1);
-  const zeroDamagePlayers = topContributors.filter((player) => player.total_damage <= 0);
-
   let performanceLabel = "Balanced";
   let performanceTone = "emerald";
   let performanceDescription = "Damage is distributed across a healthy part of the roster.";
@@ -111,9 +109,8 @@ export function buildCountryStats(country, allPlayers, normalizeCountryKey) {
     playersFor75: playersNeededFor(75),
     playersFor90: playersNeededFor(90),
     playersAbove1Pct: topContributors.filter((player) => player.damageShare >= 1).length,
-    playersAbove5Pct: topContributors.filter((player) => player.damageShare >= 5).length,
+    playersAbove05Pct: topContributors.filter((player) => player.damageShare >= 0.5).length,
     playersAbove10Pct: topContributors.filter((player) => player.damageShare >= 10).length,
-    zeroDamagePlayers: zeroDamagePlayers.length,
     tracePlayers: tracePlayers.length,
     marginalPlayers: marginalPlayers.length,
     lowImpactPlayers: lowImpactPlayers.length,

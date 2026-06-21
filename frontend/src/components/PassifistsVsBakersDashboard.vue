@@ -292,10 +292,11 @@ function buildSideParticipationMetrics(sideKey, label, accent) {
     accent,
     totalPlayers: players.length,
     totalDamage,
-    zeroDamagePlayers: players.filter((player) => player.total_damage <= 0).length,
+    tracePlayers: players.filter((player) => (totalDamage ? player.total_damage / totalDamage < 0.001 : false)).length,
+    lowImpactPlayers: players.filter((player) => (totalDamage ? player.total_damage / totalDamage < 0.01 : false)).length,
     supportPlayers: players.filter((player) => (totalDamage ? player.total_damage / totalDamage >= 0.001 : false)).length,
     significantPlayers: players.filter((player) => (totalDamage ? player.total_damage / totalDamage >= 0.01 : false)).length,
-    heavyLifters: players.filter((player) => (totalDamage ? player.total_damage / totalDamage >= 0.05 : false)).length,
+    coreContributors: players.filter((player) => (totalDamage ? player.total_damage / totalDamage >= 0.005 : false)).length,
     playersFor50: playersFor50 || 0,
     avgDamage: players.length ? totalDamage / players.length : 0,
   };
@@ -332,12 +333,12 @@ const participationCards = computed(() => {
       tone: "cyan",
     },
     {
-      label: "Top-heavy carry",
+      label: "Active core",
       value:
         totalDamage > 0
-          ? `${formatPercent(((coalition.heavyLifters + hostile.heavyLifters) / Math.max(1, totalPlayers)) * 100)}`
+          ? `${formatPercent(((coalition.coreContributors + hostile.coreContributors) / Math.max(1, totalPlayers)) * 100)}`
           : "0.0%",
-      note: "Share of roster made of 5%+ side-damage heavy lifters.",
+      note: "Share of roster made of players doing at least 0.5% of their side's damage.",
       tone: "amber",
     },
   ];
@@ -632,9 +633,11 @@ function emitPlayerDetails(player) {
                 <p class="mt-2 text-sm leading-6 text-slate-400">Players who each delivered at least one percent of all tracked damage.</p>
               </div>
               <div class="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
-                <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">5%+ heavy lifters</div>
-                <div class="mt-3 text-3xl font-bold text-amber-300">{{ playerInsights.heavyLifters }}</div>
-                <p class="mt-2 text-sm leading-6 text-slate-400">Quick read on whether the campaign is broad-based or carried by very few monsters.</p>
+                <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">0.5%+ core contributors</div>
+                <div class="mt-3 text-3xl font-bold text-amber-300">
+                  {{ sideParticipation[0].coreContributors + sideParticipation[1].coreContributors }}
+                </div>
+                <p class="mt-2 text-sm leading-6 text-slate-400">Players who contributed at least 0.5% of their own side's tracked damage.</p>
               </div>
               <div class="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
                 <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">Top 1 share</div>
@@ -901,9 +904,9 @@ function emitPlayerDetails(player) {
                   <p class="mt-1 text-xs text-slate-400">At least 0.1% of side damage.</p>
                 </div>
                 <div class="rounded-xl border border-slate-800 bg-slate-950/55 px-3 py-3">
-                  <div class="text-[11px] uppercase tracking-[0.16em] text-slate-500">Heavy lifters</div>
-                  <div class="mt-2 text-lg font-semibold text-white">{{ side.heavyLifters }}</div>
-                  <p class="mt-1 text-xs text-slate-400">Each did 5%+ of side damage.</p>
+                  <div class="text-[11px] uppercase tracking-[0.16em] text-slate-500">Core contributors</div>
+                  <div class="mt-2 text-lg font-semibold text-white">{{ side.coreContributors }}</div>
+                  <p class="mt-1 text-xs text-slate-400">Each did at least 0.5% of side damage.</p>
                 </div>
                 <div class="rounded-xl border border-slate-800 bg-slate-950/55 px-3 py-3">
                   <div class="text-[11px] uppercase tracking-[0.16em] text-slate-500">For 50% damage</div>
@@ -916,9 +919,14 @@ function emitPlayerDetails(player) {
                   <p class="mt-1 text-xs text-slate-400">Mean tracked damage across the whole roster.</p>
                 </div>
                 <div class="rounded-xl border border-slate-800 bg-slate-950/55 px-3 py-3">
-                  <div class="text-[11px] uppercase tracking-[0.16em] text-slate-500">Trace / zero</div>
-                  <div class="mt-2 text-lg font-semibold text-white">{{ side.zeroDamagePlayers }}</div>
-                  <p class="mt-1 text-xs text-slate-400">Players with zero tracked damage.</p>
+                  <div class="text-[11px] uppercase tracking-[0.16em] text-slate-500">Trace players</div>
+                  <div class="mt-2 text-lg font-semibold text-white">{{ side.tracePlayers }}</div>
+                  <p class="mt-1 text-xs text-slate-400">Below 0.1% of side damage each.</p>
+                </div>
+                <div class="rounded-xl border border-slate-800 bg-slate-950/55 px-3 py-3">
+                  <div class="text-[11px] uppercase tracking-[0.16em] text-slate-500">Low impact</div>
+                  <div class="mt-2 text-lg font-semibold text-white">{{ side.lowImpactPlayers }}</div>
+                  <p class="mt-1 text-xs text-slate-400">Below 1% of side damage each.</p>
                 </div>
               </div>
             </div>

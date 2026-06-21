@@ -59,7 +59,7 @@ const effectivenessCards = computed(() => {
 
   return [
     { label: "1%+ share", value: `${props.stats.playersAbove1Pct}/${props.stats.playerCount}` },
-    { label: "5%+ share", value: `${props.stats.playersAbove5Pct}/${props.stats.playerCount}` },
+    { label: "0.5%+ share", value: `${props.stats.playersAbove05Pct}/${props.stats.playerCount}` },
     { label: "10%+ share", value: `${props.stats.playersAbove10Pct}/${props.stats.playerCount}` },
     { label: "Attackers", value: props.stats.sideCounts.attackers },
     { label: "Defenders", value: props.stats.sideCounts.defenders },
@@ -76,7 +76,7 @@ const tailCards = computed(() => {
     { label: "< 0.1% share", value: `${props.stats.tracePlayers}/${props.stats.playerCount}`, tone: "text-rose-300" },
     { label: "< 0.5% share", value: `${props.stats.marginalPlayers}/${props.stats.playerCount}`, tone: "text-amber-300" },
     { label: "< 1% share", value: `${props.stats.lowImpactPlayers}/${props.stats.playerCount}`, tone: "text-yellow-200" },
-    { label: "Zero damage", value: `${props.stats.zeroDamagePlayers}/${props.stats.playerCount}`, tone: "text-slate-300" },
+    { label: "< 0.1% share", value: `${props.stats.tracePlayers}/${props.stats.playerCount}`, tone: "text-rose-300" },
     { label: "Bottom 50% dmg", value: formatPercent(props.stats.bottomHalfShare), tone: "text-cyan-300" },
     { label: "Outside top 10", value: formatPercent(props.stats.tailShareOutsideTop10), tone: "text-emerald-300" },
   ];
