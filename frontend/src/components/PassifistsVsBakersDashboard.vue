@@ -271,6 +271,83 @@ const playerInsights = computed(() => {
   };
 });
 
+function buildSideParticipationMetrics(sideKey, label, accent) {
+  const players = playerInsights.value.players.filter((player) => player.side === sideKey);
+  const totalDamage = players.reduce((sum, player) => sum + player.total_damage, 0);
+  const sortedPlayers = [...players].sort((a, b) => b.total_damage - a.total_damage);
+
+  let cumulativeDamage = 0;
+  let playersFor50 = 0;
+
+  sortedPlayers.forEach((player, index) => {
+    cumulativeDamage += player.total_damage;
+    if (!playersFor50 && totalDamage > 0 && cumulativeDamage / totalDamage >= 0.5) {
+      playersFor50 = index + 1;
+    }
+  });
+
+  return {
+    sideKey,
+    label,
+    accent,
+    totalPlayers: players.length,
+    totalDamage,
+    zeroDamagePlayers: players.filter((player) => player.total_damage <= 0).length,
+    supportPlayers: players.filter((player) => (totalDamage ? player.total_damage / totalDamage >= 0.001 : false)).length,
+    significantPlayers: players.filter((player) => (totalDamage ? player.total_damage / totalDamage >= 0.01 : false)).length,
+    heavyLifters: players.filter((player) => (totalDamage ? player.total_damage / totalDamage >= 0.05 : false)).length,
+    playersFor50: playersFor50 || 0,
+    avgDamage: players.length ? totalDamage / players.length : 0,
+  };
+}
+
+const participationCards = computed(() => {
+  const coalition = buildSideParticipationMetrics("coalition", "Coalition", "emerald");
+  const hostile = buildSideParticipationMetrics("hostile", "Hostile", "rose");
+  const totalPlayers = coalition.totalPlayers + hostile.totalPlayers;
+  const totalDamage = coalition.totalDamage + hostile.totalDamage;
+
+  return [
+    {
+      label: "All tracked players",
+      value: totalPlayers,
+      note: `${coalition.totalPlayers} coalition vs ${hostile.totalPlayers} hostile`,
+      tone: "slate",
+    },
+    {
+      label: "Numerical edge",
+      value:
+        coalition.totalPlayers === hostile.totalPlayers
+          ? "Even"
+          : coalition.totalPlayers > hostile.totalPlayers
+            ? `Coalition +${coalition.totalPlayers - hostile.totalPlayers}`
+            : `Hostile +${hostile.totalPlayers - coalition.totalPlayers}`,
+      note: "Raw headcount of unique players in tracked countries.",
+      tone: "slate",
+    },
+    {
+      label: "Meaningful contributors",
+      value: coalition.significantPlayers + hostile.significantPlayers,
+      note: "Players with at least 1% of their side's tracked damage.",
+      tone: "cyan",
+    },
+    {
+      label: "Top-heavy carry",
+      value:
+        totalDamage > 0
+          ? `${formatPercent(((coalition.heavyLifters + hostile.heavyLifters) / Math.max(1, totalPlayers)) * 100)}`
+          : "0.0%",
+      note: "Share of roster made of 5%+ side-damage heavy lifters.",
+      tone: "amber",
+    },
+  ];
+});
+
+const sideParticipation = computed(() => [
+  buildSideParticipationMetrics("coalition", "Coalition", "emerald"),
+  buildSideParticipationMetrics("hostile", "Hostile", "rose"),
+]);
+
 const topStatCards = computed(() => [
   {
     label: "Matched wars",
@@ -751,6 +828,99 @@ function emitPlayerDetails(player) {
                   </tr>
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="rounded-[26px] border border-slate-800 bg-slate-900/65 p-5 md:p-6">
+          <div class="flex items-end justify-between gap-4">
+            <div>
+              <p class="text-[11px] uppercase tracking-[0.2em] text-slate-500">Roster pressure</p>
+              <h3 class="mt-2 text-2xl font-bold text-white">Participation and real impact</h3>
+              <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+                This block separates raw attendance from actual carrying power. A meaningful contributor means at least
+                <span class="font-semibold text-white"> 1% of that side&apos;s tracked damage</span>, while support means at least
+                <span class="font-semibold text-white"> 0.1%</span>.
+              </p>
+            </div>
+          </div>
+
+          <div class="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div
+              v-for="card in participationCards"
+              :key="card.label"
+              class="rounded-2xl border px-4 py-4"
+              :class="{
+                'border-slate-800 bg-slate-950/60': card.tone === 'slate',
+                'border-cyan-500/20 bg-cyan-500/10': card.tone === 'cyan',
+                'border-amber-500/20 bg-amber-500/10': card.tone === 'amber',
+              }"
+            >
+              <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">{{ card.label }}</div>
+              <div class="mt-2 text-2xl font-black text-white">{{ card.value }}</div>
+              <p class="mt-2 text-xs leading-5 text-slate-400">{{ card.note }}</p>
+            </div>
+          </div>
+
+          <div class="mt-6 grid gap-4 xl:grid-cols-2">
+            <div
+              v-for="side in sideParticipation"
+              :key="side.sideKey"
+              class="rounded-[24px] border p-5"
+              :class="
+                side.accent === 'emerald'
+                  ? 'border-emerald-500/20 bg-emerald-500/8'
+                  : 'border-rose-500/20 bg-rose-500/8'
+              "
+            >
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <div
+                    class="text-[11px] uppercase tracking-[0.18em]"
+                    :class="side.accent === 'emerald' ? 'text-emerald-200/70' : 'text-rose-200/70'"
+                  >
+                    {{ side.label }}
+                  </div>
+                  <h4 class="mt-2 text-2xl font-bold text-white">{{ side.totalPlayers }} players</h4>
+                </div>
+                <div class="text-right">
+                  <div class="text-xs uppercase tracking-[0.16em] text-slate-500">Tracked damage</div>
+                  <div class="mt-1 text-lg font-bold text-white">{{ formatCompactNumber(side.totalDamage) }}</div>
+                </div>
+              </div>
+
+              <div class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <div class="rounded-xl border border-slate-800 bg-slate-950/55 px-3 py-3">
+                  <div class="text-[11px] uppercase tracking-[0.16em] text-slate-500">Meaningful</div>
+                  <div class="mt-2 text-lg font-semibold text-white">{{ side.significantPlayers }}</div>
+                  <p class="mt-1 text-xs text-slate-400">At least 1% of side damage.</p>
+                </div>
+                <div class="rounded-xl border border-slate-800 bg-slate-950/55 px-3 py-3">
+                  <div class="text-[11px] uppercase tracking-[0.16em] text-slate-500">Support</div>
+                  <div class="mt-2 text-lg font-semibold text-white">{{ side.supportPlayers }}</div>
+                  <p class="mt-1 text-xs text-slate-400">At least 0.1% of side damage.</p>
+                </div>
+                <div class="rounded-xl border border-slate-800 bg-slate-950/55 px-3 py-3">
+                  <div class="text-[11px] uppercase tracking-[0.16em] text-slate-500">Heavy lifters</div>
+                  <div class="mt-2 text-lg font-semibold text-white">{{ side.heavyLifters }}</div>
+                  <p class="mt-1 text-xs text-slate-400">Each did 5%+ of side damage.</p>
+                </div>
+                <div class="rounded-xl border border-slate-800 bg-slate-950/55 px-3 py-3">
+                  <div class="text-[11px] uppercase tracking-[0.16em] text-slate-500">For 50% damage</div>
+                  <div class="mt-2 text-lg font-semibold text-white">{{ side.playersFor50 }}</div>
+                  <p class="mt-1 text-xs text-slate-400">Players needed to reach half the side output.</p>
+                </div>
+                <div class="rounded-xl border border-slate-800 bg-slate-950/55 px-3 py-3">
+                  <div class="text-[11px] uppercase tracking-[0.16em] text-slate-500">Average per player</div>
+                  <div class="mt-2 text-lg font-semibold text-white">{{ formatCompactNumber(side.avgDamage) }}</div>
+                  <p class="mt-1 text-xs text-slate-400">Mean tracked damage across the whole roster.</p>
+                </div>
+                <div class="rounded-xl border border-slate-800 bg-slate-950/55 px-3 py-3">
+                  <div class="text-[11px] uppercase tracking-[0.16em] text-slate-500">Trace / zero</div>
+                  <div class="mt-2 text-lg font-semibold text-white">{{ side.zeroDamagePlayers }}</div>
+                  <p class="mt-1 text-xs text-slate-400">Players with zero tracked damage.</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>

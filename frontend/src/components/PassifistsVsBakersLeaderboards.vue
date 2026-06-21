@@ -32,7 +32,7 @@ function handlePlayerClick(player) {
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div class="grid gap-4 xl:grid-cols-2">
     <div class="rounded-[26px] border border-slate-800 bg-slate-900/65 p-5 md:p-6">
       <div class="flex items-end justify-between gap-4">
         <div>
