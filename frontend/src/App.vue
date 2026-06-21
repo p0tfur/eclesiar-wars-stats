@@ -18,7 +18,6 @@ import PlayerDetailsModal from "./components/PlayerDetailsModal.vue";
 import PassifistsVsBakersDashboard from "./components/PassifistsVsBakersDashboard.vue";
 import { PASSIFISTS_VS_BAKERS_ROUTE } from "./constants/passifistsVsBakers.js";
 
-// State
 const battles = ref([]);
 const selectedBattleIds = ref([]);
 const summary = ref([]);
@@ -30,30 +29,24 @@ const API_KEY_STORAGE_KEY = "eclesiar_api_key";
 const userApiKey = ref(typeof window !== "undefined" ? localStorage.getItem(API_KEY_STORAGE_KEY) || "" : "");
 const error = ref("");
 
-// Range fetch state
 const rangeFromId = ref("");
 const rangeToId = ref("");
 const fetchProgress = ref(null);
 let progressInterval = null;
 
-// Country filter state (include)
 const countryFilters = ref([]);
 const excludedFilterBattleIds = ref([]);
 const countrySearch = ref("");
 const includeDropdownOpen = ref(false);
 
-// Country exclude filter state
 const excludeCountryFilters = ref([]);
 const excludeCountrySearch = ref("");
 const excludeDropdownOpen = ref(false);
 
-// Date range filter state
 const dateFrom = ref("");
 const dateTo = ref("");
 
-// Refresh state for individual battles
 const refreshingBattleId = ref(null);
-// Player details modal state
 const playerDetailsOpen = ref(false);
 const selectedPlayer = ref(null);
 const playerDetails = ref([]);
@@ -65,7 +58,6 @@ const currentView = ref(
     : "default",
 );
 
-// Computed
 const availableCountries = computed(() => {
   const names = new Set();
   battles.value.forEach((battle) => {
@@ -93,7 +85,6 @@ const filteredExcludeCountryOptions = computed(() => {
   return base.filter((country) => country.toLowerCase().includes(query));
 });
 
-// Check if any filter is active
 const hasActiveFilters = computed(() => {
   return countryFilters.value.length > 0 || excludeCountryFilters.value.length > 0 || dateFrom.value || dateTo.value;
 });
@@ -101,7 +92,6 @@ const hasActiveFilters = computed(() => {
 const filteredBattleIds = computed(() => {
   let result = battles.value;
 
-  // Apply include filter
   if (countryFilters.value.length) {
     result = result.filter(
       (battle) =>
@@ -109,7 +99,6 @@ const filteredBattleIds = computed(() => {
     );
   }
 
-  // Apply exclude filter
   if (excludeCountryFilters.value.length) {
     result = result.filter(
       (battle) =>
@@ -118,7 +107,6 @@ const filteredBattleIds = computed(() => {
     );
   }
 
-  // Apply date range filter
   if (dateFrom.value) {
     const fromDate = new Date(dateFrom.value);
     fromDate.setHours(0, 0, 0, 0);
@@ -155,7 +143,7 @@ const displayedBattles = computed(() => {
 });
 
 const sortedDisplayedBattles = computed(() => {
-  return [...displayedBattles.value].sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0));
+  return [...displayedBattles.value].sort((a, b) => (Number(b.id) || 0) - Number(a.id || 0));
 });
 
 const filterSelectedBattleIds = computed(() =>
@@ -193,21 +181,12 @@ function openDefaultView() {
   currentView.value = "default";
 }
 
-// Check if battle is incomplete (neither side has won 5 rounds yet)
 function isBattleIncomplete(battle) {
-  // Battle is complete when one side reaches 5 wins
   const attackerWins = battle.attackers_score || 0;
   const defenderWins = battle.defenders_score || 0;
-
-  // If neither side has 5 wins, battle is still in progress
-  if (attackerWins < 5 && defenderWins < 5) {
-    return true;
-  }
-
-  return false;
+  return attackerWins < 5 && defenderWins < 5;
 }
 
-// Refresh a single battle
 async function refreshBattle(battleId) {
   if (refreshingBattleId.value) return;
 
@@ -215,7 +194,6 @@ async function refreshBattle(battleId) {
   error.value = "";
 
   try {
-    console.log(`Refreshing battle ${battleId}...`);
     const battle = battles.value.find((entry) => Number(entry.id) === Number(battleId));
 
     if (battle && isBattleIncomplete(battle)) {
@@ -224,11 +202,9 @@ async function refreshBattle(battleId) {
       await fetchBattle(battleId, userApiKey.value || undefined);
     }
 
-    // Reload battles list to get updated data
     await loadBattles();
   } catch (err) {
     error.value = "Failed to refresh battle: " + err.message;
-    console.log("Error refreshing battle:", err);
   } finally {
     refreshingBattleId.value = null;
   }
@@ -238,7 +214,6 @@ watch(filteredBattleIds, (newIds) => {
   excludedFilterBattleIds.value = excludedFilterBattleIds.value.filter((id) => newIds.includes(id));
 });
 
-// Load battles from database
 async function loadBattles() {
   loading.value = true;
   error.value = "";
@@ -249,13 +224,11 @@ async function loadBattles() {
     }
   } catch (err) {
     error.value = "Failed to load battles: " + err.message;
-    console.log("Error loading battles:", err);
   } finally {
     loading.value = false;
   }
 }
 
-// Fetch new battle from API
 async function handleFetchBattle() {
   if (!newBattleId.value) return;
 
@@ -269,13 +242,11 @@ async function handleFetchBattle() {
     }
   } catch (err) {
     error.value = "Failed to fetch battle: " + err.message;
-    console.log("Error fetching battle:", err);
   } finally {
     fetchingBattle.value = false;
   }
 }
 
-// Fetch range of battles from API
 async function handleFetchRange() {
   if (!rangeFromId.value || !rangeToId.value) return;
 
@@ -291,16 +262,13 @@ async function handleFetchRange() {
   try {
     const response = await fetchBattleRange(fromId, toId, userApiKey.value.trim() || undefined);
     if (response.success) {
-      // Start polling for progress
       startProgressPolling();
     }
   } catch (err) {
     error.value = "Failed to start range fetch: " + err.message;
-    console.log("Error starting range fetch:", err);
   }
 }
 
-// Poll for fetch progress
 function startProgressPolling() {
   if (progressInterval) clearInterval(progressInterval);
 
@@ -310,7 +278,6 @@ function startProgressPolling() {
       if (response.success) {
         fetchProgress.value = response.data;
 
-        // Stop polling when done
         if (!response.data.isRunning) {
           clearInterval(progressInterval);
           progressInterval = null;
@@ -319,13 +286,12 @@ function startProgressPolling() {
           await loadBattles();
         }
       }
-    } catch (err) {
-      console.log("Error polling progress:", err);
+    } catch {
+      return;
     }
   }, 1000);
 }
 
-// Delete a battle
 async function handleDeleteBattle(battleId) {
   if (!confirm("Are you sure you want to delete this battle?")) return;
 
@@ -333,13 +299,11 @@ async function handleDeleteBattle(battleId) {
     await deleteBattle(battleId);
     selectedBattleIds.value = selectedBattleIds.value.filter((id) => id !== battleId);
     await loadBattles();
-    // Clear summary if no battles selected
     if (selectedBattleIds.value.length === 0) {
       summary.value = [];
     }
   } catch (err) {
     error.value = "Failed to delete battle: " + err.message;
-    console.log("Error deleting battle:", err);
   }
 }
 
@@ -347,7 +311,6 @@ function isBattleSelected(battleId) {
   return selectedBattleIds.value.includes(battleId) || filterSelectedBattleIds.value.includes(battleId);
 }
 
-// Toggle battle selection
 function toggleBattle(battleId, checked) {
   if (checked) {
     if (!selectedBattleIds.value.includes(battleId)) {
@@ -361,24 +324,20 @@ function toggleBattle(battleId, checked) {
     const manualIndex = selectedBattleIds.value.indexOf(battleId);
     if (manualIndex !== -1) {
       selectedBattleIds.value.splice(manualIndex, 1);
-    } else if (filteredBattleIds.value.includes(battleId)) {
-      if (!excludedFilterBattleIds.value.includes(battleId)) {
-        excludedFilterBattleIds.value.push(battleId);
-      }
+    } else if (filteredBattleIds.value.includes(battleId) && !excludedFilterBattleIds.value.includes(battleId)) {
+      excludedFilterBattleIds.value.push(battleId);
     }
   }
 }
 
-// Select/deselect all battles
 function toggleAllBattles() {
   if (selectedBattleIds.value.length === battles.value.length) {
     selectedBattleIds.value = [];
   } else {
-    selectedBattleIds.value = battles.value.map((b) => b.id);
+    selectedBattleIds.value = battles.value.map((battle) => battle.id);
   }
 }
 
-// Generate war summary
 async function generateSummary() {
   if (!hasSelectedBattles.value) {
     return;
@@ -393,14 +352,16 @@ async function generateSummary() {
     }
   } catch (err) {
     error.value = "Failed to generate summary: " + err.message;
-    console.log("Error generating summary:", err);
   } finally {
     loadingSummary.value = false;
   }
 }
 
-async function openPlayerDetails(player) {
-  if (!player?.fighter_id) {
+async function openPlayerDetails(payload) {
+  const player = payload?.player || payload;
+  const battleIds = payload?.battleIds || combinedBattleIds.value;
+
+  if (!player?.fighter_id || !battleIds?.length) {
     return;
   }
 
@@ -411,14 +372,14 @@ async function openPlayerDetails(player) {
   playerDetails.value = [];
 
   try {
-    const response = await getPlayerBattleDetails(combinedBattleIds.value, player.fighter_id);
+    const response = await getPlayerBattleDetails(battleIds, player.fighter_id);
     if (response.success) {
       playerDetails.value = response.data;
     } else {
-      playerDetailsError.value = response.error || "Nie udało się pobrać szczegółów gracza.";
+      playerDetailsError.value = response.error || "Failed to load player details.";
     }
   } catch (err) {
-    playerDetailsError.value = "Nie udało się pobrać szczegółów gracza: " + err.message;
+    playerDetailsError.value = "Failed to load player details: " + err.message;
   } finally {
     playerDetailsLoading.value = false;
   }
@@ -453,7 +414,7 @@ function clearAllFilters() {
 
 function toggleCountryOption(option) {
   if (countryFilters.value.includes(option)) {
-    countryFilters.value = countryFilters.value.filter((c) => c !== option);
+    countryFilters.value = countryFilters.value.filter((country) => country !== option);
   } else {
     countryFilters.value = [...countryFilters.value, option];
   }
@@ -461,12 +422,12 @@ function toggleCountryOption(option) {
 
 function removeCountryChip(option, event) {
   event?.stopPropagation();
-  countryFilters.value = countryFilters.value.filter((c) => c !== option);
+  countryFilters.value = countryFilters.value.filter((country) => country !== option);
 }
 
 function toggleExcludeCountryOption(option) {
   if (excludeCountryFilters.value.includes(option)) {
-    excludeCountryFilters.value = excludeCountryFilters.value.filter((c) => c !== option);
+    excludeCountryFilters.value = excludeCountryFilters.value.filter((country) => country !== option);
   } else {
     excludeCountryFilters.value = [...excludeCountryFilters.value, option];
   }
@@ -474,11 +435,10 @@ function toggleExcludeCountryOption(option) {
 
 function removeExcludeCountryChip(option, event) {
   event?.stopPropagation();
-  excludeCountryFilters.value = excludeCountryFilters.value.filter((c) => c !== option);
+  excludeCountryFilters.value = excludeCountryFilters.value.filter((country) => country !== option);
 }
 
 function filteredSummaryReset() {
-  // helper to reset summary when filters clear
   if (!selectedBattleIds.value.length) {
     summary.value = [];
   }
@@ -506,7 +466,6 @@ watch(
   { immediate: false },
 );
 
-// Load battles on mount
 onMounted(() => {
   loadBattles();
   document.addEventListener("click", closeDropdowns);
@@ -522,7 +481,6 @@ onUnmounted(() => {
 
 <template>
   <div class="min-h-screen bg-slate-950 text-slate-200 font-sans selection:bg-emerald-500/30" @click="closeDropdowns">
-    <!-- Top Header -->
     <header class="sticky top-0 z-40 w-full backdrop-blur-lg bg-slate-950/80 border-b border-slate-800/60">
       <div class="container mx-auto px-4 h-16 flex items-center justify-between">
         <div class="flex items-center gap-3">
@@ -547,7 +505,6 @@ onUnmounted(() => {
     </header>
 
     <main class="container mx-auto px-4 py-8 space-y-6">
-      <!-- Error message -->
       <div
         v-if="error"
         class="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl flex items-center gap-3"
@@ -659,7 +616,7 @@ onUnmounted(() => {
         <p class="text-slate-400 text-sm">
           &copy; 2025 WAR - WARs Summary for Eclesiar ||
           <span class="text-xs text-slate-400 mt-2 inline-block">
-            Made with <span class="text-red-500">❤️</span> by
+            Made with <span class="text-red-500">❤</span> by
             <a
               href="https://github.com/p0tfur"
               target="_blank"
@@ -695,17 +652,19 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: #0f172a;
 }
+
 ::-webkit-scrollbar-thumb {
   background: #334155;
   border-radius: 3px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: #475569;
 }

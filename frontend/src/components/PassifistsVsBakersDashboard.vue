@@ -417,6 +417,13 @@ function openCountryDetails(country) {
 function closeCountryDetails() {
   countryDetailsOpen.value = false;
 }
+
+function emitPlayerDetails(player) {
+  emit("open-player-details", {
+    player,
+    battleIds: campaignBattleIds.value,
+  });
+}
 </script>
 
 <template>
@@ -857,7 +864,7 @@ function closeCountryDetails() {
                       <button
                         type="button"
                         class="font-semibold text-white hover:text-emerald-200 transition-colors underline-offset-2 hover:underline"
-                        @click="emit('open-player-details', player)"
+                        @click="emitPlayerDetails(player)"
                       >
                         {{ player.display_name }}
                       </button>
@@ -944,7 +951,7 @@ function closeCountryDetails() {
           :stats="selectedCountryStats"
           :format-number="formatNumber"
           @close="closeCountryDetails"
-          @open-player-details="emit('open-player-details', $event)"
+          @open-player-details="emitPlayerDetails($event)"
         />
       </template>
     </div>
