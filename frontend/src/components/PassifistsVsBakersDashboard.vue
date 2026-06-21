@@ -853,7 +853,15 @@ function closeCountryDetails() {
                 <tbody class="divide-y divide-slate-800/50">
                   <tr v-for="(player, index) in playerInsights.players.slice(0, 20)" :key="player.fighter_id" class="hover:bg-slate-800/25">
                     <td class="px-2 py-3 text-slate-600 font-mono">{{ index + 1 }}</td>
-                    <td class="px-2 py-3 text-white font-semibold">{{ player.display_name }}</td>
+                    <td class="px-2 py-3">
+                      <button
+                        type="button"
+                        class="font-semibold text-white hover:text-emerald-200 transition-colors underline-offset-2 hover:underline"
+                        @click="emit('open-player-details', player)"
+                      >
+                        {{ player.display_name }}
+                      </button>
+                    </td>
                     <td class="px-2 py-3 text-slate-300">{{ player.flag }} {{ player.country_name }}</td>
                     <td class="px-2 py-3">
                       <div class="flex flex-wrap gap-1">
