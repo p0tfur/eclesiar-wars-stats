@@ -24,7 +24,7 @@ Ten utwór jest dostępny na licencji Creative Commons Uznanie autorstwa-Użycie
 - Zarabiania bezpośrednio lub pośrednio na skrypcie
 - Włączania do płatnych usług
 
-🔄 **Na tych samych warunkach** — Jeśli remiksуjesz, zmieniasz lub tworzysz na bazie materiału, musisz rozpowszechniać swoje utwory na tej samej licencji co oryginał.
+🔄 **Na tych samych warunkach** — Jeśli remiksujesz, zmieniasz lub tworzysz na bazie materiału, musisz rozpowszechniać swoje utwory na tej samej licencji co oryginał.
 
 ⚠️ **Brak dodatkowych ograniczeń** — Nie możesz stosować środków prawnych lub technologicznych, które ograniczają innych w korzystaniu z utworu na warunkach określonych w licencji.
 
