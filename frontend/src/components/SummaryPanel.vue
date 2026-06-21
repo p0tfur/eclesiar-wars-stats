@@ -162,7 +162,7 @@ function buildCountryRows(summaryRows) {
 
   summaryRows.forEach((player) => {
     const countryName = normalizeTextValue(player.country_name, "Unknown country");
-    const countryKey = player.nationality_id ? `country-${player.nationality_id}` : `country-${countryName}`;
+    const countryKey = `country-${countryName.toLowerCase()}`;
 
     if (!countryMap.has(countryKey)) {
       countryMap.set(countryKey, {
