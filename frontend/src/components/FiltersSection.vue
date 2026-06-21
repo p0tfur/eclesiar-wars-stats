@@ -64,6 +64,10 @@ const props = defineProps({
     type: Array,
     required: true,
   },
+  currentView: {
+    type: String,
+    required: true,
+  },
 });
 
 const emit = defineEmits([
@@ -80,6 +84,7 @@ const emit = defineEmits([
   "toggle-exclude-country-option",
   "remove-country-chip",
   "remove-exclude-country-chip",
+  "open-passifists-dashboard",
 ]);
 </script>
 
@@ -111,6 +116,38 @@ const emit = defineEmits([
         </button>
       </div>
     </div>
+
+    <button
+      type="button"
+      class="group mb-4 w-full overflow-hidden rounded-2xl border text-left transition-all duration-300"
+      :class="
+        currentView === 'passifists-vs-bakers'
+          ? 'border-emerald-400/40 bg-[linear-gradient(135deg,rgba(16,185,129,0.16),rgba(15,23,42,0.92),rgba(244,63,94,0.16))] shadow-[0_18px_50px_rgba(16,185,129,0.12)]'
+          : 'border-slate-800 bg-[linear-gradient(135deg,rgba(16,185,129,0.10),rgba(15,23,42,0.92),rgba(244,63,94,0.10))] hover:border-emerald-400/30 hover:shadow-[0_18px_50px_rgba(16,185,129,0.10)]'
+      "
+      @click="emit('open-passifists-dashboard')"
+    >
+      <div class="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
+        <div class="max-w-2xl">
+          <div class="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-emerald-200">
+            Featured Campaign
+          </div>
+          <h4 class="mt-3 text-xl font-black tracking-tight text-white">Passifists vs The Bakers</h4>
+          <p class="mt-2 text-sm leading-6 text-slate-300">
+            Open the dedicated war dashboard with campaign-only stats, bloc comparisons, country breakdowns and top player performance since 05.06.2026.
+          </p>
+        </div>
+        <div class="flex items-center gap-3">
+          <div class="rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-right">
+            <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">Campaign scope</div>
+            <div class="mt-2 text-sm font-semibold text-white">Passifists / APP / URL vs Bakers</div>
+          </div>
+          <div class="flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-400/20 bg-emerald-500/10 text-emerald-200 transition-transform duration-300 group-hover:translate-x-1">
+            →
+          </div>
+        </div>
+      </div>
+    </button>
 
     <!-- All filters in one row -->
     <div class="flex flex-wrap items-end gap-4">

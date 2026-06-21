@@ -15,6 +15,8 @@ import FiltersSection from "./components/FiltersSection.vue";
 import BattlesTable from "./components/BattlesTable.vue";
 import SummaryPanel from "./components/SummaryPanel.vue";
 import PlayerDetailsModal from "./components/PlayerDetailsModal.vue";
+import PassifistsVsBakersDashboard from "./components/PassifistsVsBakersDashboard.vue";
+import { PASSIFISTS_VS_BAKERS_ROUTE } from "./constants/passifistsVsBakers.js";
 
 // State
 const battles = ref([]);
@@ -57,6 +59,11 @@ const selectedPlayer = ref(null);
 const playerDetails = ref([]);
 const playerDetailsLoading = ref(false);
 const playerDetailsError = ref("");
+const currentView = ref(
+  typeof window !== "undefined" && window.location.hash === `#${PASSIFISTS_VS_BAKERS_ROUTE}`
+    ? PASSIFISTS_VS_BAKERS_ROUTE
+    : "default",
+);
 
 // Computed
 const availableCountries = computed(() => {
@@ -162,6 +169,29 @@ const combinedBattleIds = computed(() => {
 });
 
 const hasSelectedBattles = computed(() => combinedBattleIds.value.length > 0);
+
+function syncViewFromHash() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  currentView.value =
+    window.location.hash === `#${PASSIFISTS_VS_BAKERS_ROUTE}` ? PASSIFISTS_VS_BAKERS_ROUTE : "default";
+}
+
+function openPassifistsDashboard() {
+  if (typeof window !== "undefined") {
+    window.location.hash = PASSIFISTS_VS_BAKERS_ROUTE;
+  }
+  currentView.value = PASSIFISTS_VS_BAKERS_ROUTE;
+}
+
+function openDefaultView() {
+  if (typeof window !== "undefined") {
+    history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+  }
+  currentView.value = "default";
+}
 
 // Check if battle is incomplete (neither side has won 5 rounds yet)
 function isBattleIncomplete(battle) {
@@ -480,10 +510,13 @@ watch(
 onMounted(() => {
   loadBattles();
   document.addEventListener("click", closeDropdowns);
+  window.addEventListener("hashchange", syncViewFromHash);
+  syncViewFromHash();
 });
 
 onUnmounted(() => {
   document.removeEventListener("click", closeDropdowns);
+  window.removeEventListener("hashchange", syncViewFromHash);
 });
 </script>
 
@@ -547,6 +580,7 @@ onUnmounted(() => {
       />
 
       <FiltersSection
+        :current-view="currentView"
         :has-selected-battles="hasSelectedBattles"
         :selected-battle-count="selectedBattleIds.length"
         :filter-selected-battle-count="filterSelectedBattleIds.length"
@@ -576,9 +610,17 @@ onUnmounted(() => {
         @toggle-exclude-country-option="toggleExcludeCountryOption"
         @remove-country-chip="removeCountryChip"
         @remove-exclude-country-chip="removeExcludeCountryChip"
+        @open-passifists-dashboard="openPassifistsDashboard"
       />
 
-      <div class="relative grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <PassifistsVsBakersDashboard
+        v-if="currentView === PASSIFISTS_VS_BAKERS_ROUTE"
+        :battles="battles"
+        :loading-battles="loading"
+        @back="openDefaultView"
+      />
+
+      <div v-else class="relative grid grid-cols-1 lg:grid-cols-2 gap-6">
         <BattlesTable
           :loading="loading"
           :sorted-displayed-battles="sortedDisplayedBattles"
