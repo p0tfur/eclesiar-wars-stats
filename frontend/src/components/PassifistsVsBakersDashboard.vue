@@ -434,6 +434,12 @@ const preWarDamageInsights = computed(() => {
 
   const trackedParticipants = rows.length;
   const activeBeforeWar = rows.filter((player) => player.wasActiveBeforeWar).length;
+  const activeBeforeWarCoalition = rows.filter(
+    (player) => player.wasActiveBeforeWar && player.side === "coalition",
+  ).length;
+  const activeBeforeWarHostile = rows.filter(
+    (player) => player.wasActiveBeforeWar && player.side === "hostile",
+  ).length;
   const dormantBeforeWar = rows.filter((player) => player.dormantBeforeWar).length;
   const explosiveGrowth = rows.filter((player) => player.preWarDamage > 0 && player.growthRatio >= 5).length;
   const warDamageTotal = rows.reduce((sum, player) => sum + player.warDamage, 0);
@@ -443,11 +449,13 @@ const preWarDamageInsights = computed(() => {
     rows,
     trackedParticipants,
     activeBeforeWar,
+    activeBeforeWarCoalition,
+    activeBeforeWarHostile,
     dormantBeforeWar,
     explosiveGrowth,
     warDamageTotal,
     preWarDamageTotal,
-    topBreakouts: rows.slice(0, 12),
+    topBreakouts: rows.slice(0, 20),
   };
 });
 
@@ -1068,16 +1076,21 @@ function formatGrowthRatio(value) {
             </div>
           </div>
 
-          <div class="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div class="mt-6 grid gap-3 md:grid-cols-3 xl:grid-cols-5">
             <div class="rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-4">
               <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">War participants</div>
               <div class="mt-2 text-2xl font-black text-white">{{ preWarDamageInsights.trackedParticipants }}</div>
               <p class="mt-2 text-xs leading-5 text-slate-400">Players with tracked damage during the campaign.</p>
             </div>
-            <div class="rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-4">
-              <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">Active before war</div>
-              <div class="mt-2 text-2xl font-black text-white">{{ preWarDamageInsights.activeBeforeWar }}</div>
-              <p class="mt-2 text-xs leading-5 text-slate-400">These players also had tracked damage in the prior 30-day window.</p>
+            <div class="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-4">
+              <div class="text-[11px] uppercase tracking-[0.18em] text-emerald-200/80">Coalition active</div>
+              <div class="mt-2 text-2xl font-black text-white">{{ preWarDamageInsights.activeBeforeWarCoalition }}</div>
+              <p class="mt-2 text-xs leading-5 text-slate-300">Coalition players with pre-war damage in the prior 30-day window.</p>
+            </div>
+            <div class="rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-4">
+              <div class="text-[11px] uppercase tracking-[0.18em] text-rose-200/80">Hostile active</div>
+              <div class="mt-2 text-2xl font-black text-white">{{ preWarDamageInsights.activeBeforeWarHostile }}</div>
+              <p class="mt-2 text-xs leading-5 text-slate-300">Hostile players with pre-war damage in the prior 30-day window.</p>
             </div>
             <div class="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-4">
               <div class="text-[11px] uppercase tracking-[0.18em] text-amber-200/80">Dormant before war</div>
