@@ -933,14 +933,13 @@ function emitPlayerDetails(player) {
           </div>
         </div>
 
-        <div class="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-          <PassifistsVsBakersTimeline :daily-timeline="dailyTimeline" />
-          <PassifistsVsBakersLeaderboards
-            :players="playerInsights.players"
-            :format-number="formatNumber"
-            @open-player-details="emitPlayerDetails"
-          />
-        </div>
+        <PassifistsVsBakersLeaderboards
+          :players="playerInsights.players"
+          :format-number="formatNumber"
+          @open-player-details="emitPlayerDetails"
+        />
+
+        <PassifistsVsBakersTimeline :daily-timeline="dailyTimeline" />
 
         <PassifistsVsBakersFrontLog :recent-fronts="recentFronts" :format-short-date="formatShortDate" />
 
