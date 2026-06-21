@@ -29,8 +29,10 @@ const props = defineProps({
 const emit = defineEmits(["back", "open-player-details"]);
 
 const loadingSummary = ref(false);
+const loadingPreWarSummary = ref(false);
 const summaryError = ref("");
 const campaignSummary = ref([]);
+const preWarSummary = ref([]);
 const countryDetailsOpen = ref(false);
 const selectedCountry = ref(null);
 
@@ -87,6 +89,23 @@ const campaignBattles = computed(() => {
 
 const campaignBattleIds = computed(() => campaignBattles.value.map((battle) => battle.id));
 
+const preWarBattleIds = computed(() => {
+  const warStart = new Date(`${PASSIFISTS_VS_BAKERS_START_DATE}T00:00:00`);
+  const preWarStart = new Date(warStart);
+  preWarStart.setDate(preWarStart.getDate() - 30);
+
+  return props.battles
+    .filter((battle) => {
+      if (!battle?.end_date) {
+        return false;
+      }
+
+      const battleDate = new Date(battle.end_date);
+      return battleDate >= preWarStart && battleDate < warStart;
+    })
+    .map((battle) => battle.id);
+});
+
 async function loadCampaignSummary() {
   if (!campaignBattleIds.value.length) {
     campaignSummary.value = [];
@@ -112,6 +131,30 @@ async function loadCampaignSummary() {
 }
 
 watch(campaignBattleIds, loadCampaignSummary, { immediate: true });
+
+async function loadPreWarSummary() {
+  if (!preWarBattleIds.value.length) {
+    preWarSummary.value = [];
+    return;
+  }
+
+  loadingPreWarSummary.value = true;
+
+  try {
+    const response = await getWarSummary(preWarBattleIds.value);
+    if (response.success) {
+      preWarSummary.value = response.data;
+    } else {
+      preWarSummary.value = [];
+    }
+  } catch {
+    preWarSummary.value = [];
+  } finally {
+    loadingPreWarSummary.value = false;
+  }
+}
+
+watch(preWarBattleIds, loadPreWarSummary, { immediate: true });
 
 function createTagAccumulator() {
   return Object.keys(ALLIANCE_TAG_META).reduce((acc, key) => {
@@ -349,6 +392,65 @@ const sideParticipation = computed(() => [
   buildSideParticipationMetrics("hostile", "Hostile", "rose"),
 ]);
 
+const preWarDamageInsights = computed(() => {
+  const preWarMap = new Map(
+    preWarSummary.value.map((player) => [
+      player.fighter_id,
+      {
+        total_damage: Number(player.total_damage) || 0,
+        hit_count: Number(player.hit_count) || 0,
+      },
+    ]),
+  );
+
+  const rows = playerInsights.value.players
+    .map((player) => {
+      const previous = preWarMap.get(player.fighter_id) || { total_damage: 0, hit_count: 0 };
+      const warDamage = Number(player.total_damage) || 0;
+      const preWarDamage = previous.total_damage;
+      const damageDelta = warDamage - preWarDamage;
+      const growthRatio = preWarDamage > 0 ? warDamage / preWarDamage : null;
+      const breakoutScore = damageDelta + warDamage * (preWarDamage === 0 ? 0.35 : 0);
+
+      return {
+        ...player,
+        preWarDamage,
+        preWarHits: previous.hit_count,
+        warDamage,
+        damageDelta,
+        growthRatio,
+        breakoutScore,
+        wasActiveBeforeWar: preWarDamage > 0,
+        dormantBeforeWar: preWarDamage <= warDamage * 0.1,
+      };
+    })
+    .filter((player) => player.warDamage > 0)
+    .sort((a, b) => {
+      if (b.breakoutScore !== a.breakoutScore) {
+        return b.breakoutScore - a.breakoutScore;
+      }
+      return b.warDamage - a.warDamage;
+    });
+
+  const trackedParticipants = rows.length;
+  const activeBeforeWar = rows.filter((player) => player.wasActiveBeforeWar).length;
+  const dormantBeforeWar = rows.filter((player) => player.dormantBeforeWar).length;
+  const explosiveGrowth = rows.filter((player) => player.preWarDamage > 0 && player.growthRatio >= 5).length;
+  const warDamageTotal = rows.reduce((sum, player) => sum + player.warDamage, 0);
+  const preWarDamageTotal = rows.reduce((sum, player) => sum + player.preWarDamage, 0);
+
+  return {
+    rows,
+    trackedParticipants,
+    activeBeforeWar,
+    dormantBeforeWar,
+    explosiveGrowth,
+    warDamageTotal,
+    preWarDamageTotal,
+    topBreakouts: rows.slice(0, 12),
+  };
+});
+
 const topStatCards = computed(() => [
   {
     label: "Matched wars",
@@ -506,6 +608,18 @@ function emitPlayerDetails(player) {
     battleIds: campaignBattleIds.value,
   });
 }
+
+function formatGrowthRatio(value) {
+  if (value === null) {
+    return "New / none";
+  }
+
+  if (!Number.isFinite(value)) {
+    return "Spike";
+  }
+
+  return `${value.toFixed(value >= 10 ? 1 : 2)}x`;
+}
 </script>
 
 <template>
@@ -578,7 +692,7 @@ function emitPlayerDetails(player) {
       </div>
 
       <div
-        v-if="props.loadingBattles || loadingSummary"
+        v-if="props.loadingBattles || loadingSummary || loadingPreWarSummary"
         class="rounded-[24px] border border-slate-800 bg-slate-900/60 px-6 py-10 text-center text-slate-400"
       >
         Building the campaign board...
@@ -940,6 +1054,105 @@ function emitPlayerDetails(player) {
         />
 
         <PassifistsVsBakersTimeline :daily-timeline="dailyTimeline" />
+
+        <div class="rounded-[26px] border border-slate-800 bg-slate-900/65 p-5 md:p-6">
+          <div class="flex items-end justify-between gap-4">
+            <div>
+              <p class="text-[11px] uppercase tracking-[0.2em] text-slate-500">Pre-war baseline</p>
+              <h3 class="mt-2 text-2xl font-bold text-white">Damage 30 days before war</h3>
+              <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+                Same players who fought in this campaign, compared against their damage from the
+                <span class="font-semibold text-white"> 30 days before {{ formatShortDate(PASSIFISTS_VS_BAKERS_START_DATE) }}</span>.
+                This is the quickest way to spot people who suddenly woke up for the war.
+              </p>
+            </div>
+          </div>
+
+          <div class="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div class="rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-4">
+              <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">War participants</div>
+              <div class="mt-2 text-2xl font-black text-white">{{ preWarDamageInsights.trackedParticipants }}</div>
+              <p class="mt-2 text-xs leading-5 text-slate-400">Players with tracked damage during the campaign.</p>
+            </div>
+            <div class="rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-4">
+              <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">Active before war</div>
+              <div class="mt-2 text-2xl font-black text-white">{{ preWarDamageInsights.activeBeforeWar }}</div>
+              <p class="mt-2 text-xs leading-5 text-slate-400">These players also had tracked damage in the prior 30-day window.</p>
+            </div>
+            <div class="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-4">
+              <div class="text-[11px] uppercase tracking-[0.18em] text-amber-200/80">Dormant before war</div>
+              <div class="mt-2 text-2xl font-black text-white">{{ preWarDamageInsights.dormantBeforeWar }}</div>
+              <p class="mt-2 text-xs leading-5 text-slate-300">Players whose pre-war damage was at most 10% of their wartime damage.</p>
+            </div>
+            <div class="rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-4">
+              <div class="text-[11px] uppercase tracking-[0.18em] text-cyan-200/80">5x growth cases</div>
+              <div class="mt-2 text-2xl font-black text-white">{{ preWarDamageInsights.explosiveGrowth }}</div>
+              <p class="mt-2 text-xs leading-5 text-slate-300">Players with at least five times more damage during war than before it.</p>
+            </div>
+          </div>
+
+          <div class="mt-6 grid gap-4 xl:grid-cols-2">
+            <div class="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
+              <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">Total output of war participants</div>
+              <div class="mt-3 flex items-end justify-between gap-4">
+                <div>
+                  <div class="text-xs text-slate-500">30 days before war</div>
+                  <div class="mt-1 text-2xl font-black text-slate-100">{{ formatCompactNumber(preWarDamageInsights.preWarDamageTotal) }}</div>
+                </div>
+                <div class="text-right">
+                  <div class="text-xs text-slate-500">During war</div>
+                  <div class="mt-1 text-2xl font-black text-emerald-300">{{ formatCompactNumber(preWarDamageInsights.warDamageTotal) }}</div>
+                </div>
+              </div>
+            </div>
+            <div class="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
+              <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">How to read it</div>
+              <p class="mt-3 text-sm leading-6 text-slate-400">
+                The table below only uses players who actually dealt damage in the campaign. It highlights the biggest spikes
+                by comparing their war damage against the 30-day pre-war baseline from the same database.
+              </p>
+            </div>
+          </div>
+
+          <div class="mt-6 overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="text-slate-500 uppercase text-[11px] tracking-[0.16em]">
+                <tr>
+                  <th class="px-2 py-3 text-left">#</th>
+                  <th class="px-2 py-3 text-left">Player</th>
+                  <th class="px-2 py-3 text-left">Country</th>
+                  <th class="px-2 py-3 text-right">Pre-war 30d</th>
+                  <th class="px-2 py-3 text-right">War damage</th>
+                  <th class="px-2 py-3 text-right">Delta</th>
+                  <th class="px-2 py-3 text-right">Growth</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-800/50">
+                <tr
+                  v-for="(player, index) in preWarDamageInsights.topBreakouts"
+                  :key="`prewar-${player.fighter_id}`"
+                  class="hover:bg-slate-800/25"
+                >
+                  <td class="px-2 py-3 text-slate-600 font-mono">{{ index + 1 }}</td>
+                  <td class="px-2 py-3">
+                    <button
+                      type="button"
+                      class="font-semibold text-white hover:text-emerald-200 transition-colors underline-offset-2 hover:underline"
+                      @click="emitPlayerDetails(player)"
+                    >
+                      {{ player.display_name }}
+                    </button>
+                  </td>
+                  <td class="px-2 py-3 text-slate-300">{{ player.flag }} {{ player.country_name }}</td>
+                  <td class="px-2 py-3 text-right font-mono text-slate-400">{{ formatNumber(player.preWarDamage) }}</td>
+                  <td class="px-2 py-3 text-right font-mono text-emerald-300">{{ formatNumber(player.warDamage) }}</td>
+                  <td class="px-2 py-3 text-right font-mono text-amber-300">{{ formatNumber(player.damageDelta) }}</td>
+                  <td class="px-2 py-3 text-right font-mono text-cyan-300">{{ formatGrowthRatio(player.growthRatio) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
 
         <PassifistsVsBakersFrontLog :recent-fronts="recentFronts" :format-short-date="formatShortDate" />
 
