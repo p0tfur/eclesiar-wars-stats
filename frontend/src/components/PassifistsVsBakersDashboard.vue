@@ -10,6 +10,7 @@ import {
   COALITION_COUNTRIES,
   HOSTILE_COUNTRIES,
   PASSIFISTS_VS_BAKERS_START_DATE,
+  PASSIFISTS_VS_BAKERS_END_DATE,
   getCampaignCountry,
   getCampaignSide,
 } from "../constants/passifistsVsBakers.js";
@@ -187,12 +188,11 @@ function toggleBreakoutSort(key) {
   }
 }
 
-const today = computed(() => new Date().toISOString().slice(0, 10));
+const campaignEndDate = computed(() => PASSIFISTS_VS_BAKERS_END_DATE);
 
 const campaignBattles = computed(() => {
   const start = new Date(`${PASSIFISTS_VS_BAKERS_START_DATE}T00:00:00`);
-  const end = new Date();
-  end.setHours(23, 59, 59, 999);
+  const end = new Date(`${PASSIFISTS_VS_BAKERS_END_DATE}T23:59:59.999`);
 
   return props.battles
     .filter((battle) => {
@@ -619,7 +619,7 @@ const topStatCards = computed(() => [
     compact: String(battleMetrics.value.total),
     full: `${battleMetrics.value.total} tracked`,
     tone: "slate",
-    help: "All wars from 05.06.2026 until today in the local database.",
+    help: `All wars from ${formatShortDate(PASSIFISTS_VS_BAKERS_START_DATE)} until ${formatShortDate(campaignEndDate.value)} in the local database.`,
   },
   {
     label: "Coalition tracked damage",
@@ -654,7 +654,7 @@ const recentFronts = computed(() =>
 
 const dailyTimeline = computed(() => {
   const start = new Date(`${PASSIFISTS_VS_BAKERS_START_DATE}T00:00:00`);
-  const end = new Date(`${today.value}T00:00:00`);
+  const end = new Date(`${campaignEndDate.value}T23:59:59.999`);
   const dayMap = new Map();
 
   for (let cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
@@ -808,11 +808,11 @@ function formatGrowthRatio(value) {
             Passifists <span class="text-emerald-300">vs</span> The Bakers
           </h2>
           <p class="mt-4 max-w-2xl text-sm md:text-base leading-7 text-slate-300">
-            A dedicated war room for the long campaign that started on
+            A dedicated war room for the long campaign that ran from
             <span class="font-semibold text-white">{{ formatShortDate(PASSIFISTS_VS_BAKERS_START_DATE) }}</span>
-            and runs through
-            <span class="font-semibold text-white">{{ formatShortDate(today) }}</span>
-            while the conflict is active. The view combines alliance politics, battle fronts, and player output into one operational picture.
+            until
+            <span class="font-semibold text-white">{{ formatShortDate(campaignEndDate) }}</span>.
+            The view combines alliance politics, battle fronts, and player output into one operational picture.
           </p>
         </div>
 

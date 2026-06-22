@@ -26,3 +26,4 @@
 - 2026-06-21: Wykluczono graczy z passsi.txt (budowniczowie Passifists) z liczby zombie Coalition — zero pre-war damage nie oznacza braku aktywności.
 - 2026-06-21: Dodano sortowanie klikalnych kolumn (Pre-war 30d, War damage, Delta, Growth) w tabeli top breakouts z cyklem desc → asc → default.
 - 2026-06-21: Dodano sumę damage zombie per strona (Coalition/Hostile) do kart Pre-war baseline.
+- 2026-06-21: Zamrożono zakres statystyk Passifists vs The Bakers do końca dnia 21.06.2026 (zakończenie wojny) – wszystkie metryki, timeline i listy bitew używają teraz stałej daty końcowej zamiast bieżącego dnia.

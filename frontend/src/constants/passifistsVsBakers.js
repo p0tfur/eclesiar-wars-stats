@@ -1,5 +1,6 @@
 export const PASSIFISTS_VS_BAKERS_ROUTE = "passifists-vs-bakers";
 export const PASSIFISTS_VS_BAKERS_START_DATE = "2026-06-05";
+export const PASSIFISTS_VS_BAKERS_END_DATE = "2026-06-21";
 
 export const COALITION_COUNTRIES = [
   { name: "Poland", flag: "🇵🇱", tags: ["Passifists"] },
